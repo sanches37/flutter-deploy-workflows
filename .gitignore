@@ -1,0 +1,14 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Local secrets (절대 커밋 금지)
+*.p12
+*.mobileprovision
+service-account*.json
+secrets.env
