@@ -1,0 +1,47 @@
+# Ruby + Bundler 셋업 (private gem auth 포함)
+#
+# 호출 예:
+#   - uses: ./.github/actions/setup-ruby
+#     with:
+#       working-directory: ios
+#       gem-token: ${{ secrets.PLUGIN_GIT_TOKEN || secrets.MATCH_GIT_TOKEN }}
+#
+# 순서 중요: git auth → ruby/setup-ruby (bundler-cache: true).
+# bundler-cache는 lock 없을 때 bundle install 자동 수행 → private gem fetch 시 auth 필요.
+# Day 2 yml은 ruby setup이 먼저였고 bundle install이 나중에 retry → lock 없는 신규 프로젝트에서
+# 첫 실행 실패 위험 있었음. 본 composite에서 순서 교정.
+
+name: 'Setup Ruby'
+description: 'Ruby + Bundler 셋업 + private gem auth 설정'
+
+inputs:
+  ruby-version:
+    description: 'Ruby 버전'
+    required: false
+    default: '3.3'
+  working-directory:
+    description: 'Gemfile 위치 (ios 또는 android)'
+    required: true
+  gem-token:
+    description: 'Private gem 접근용 PAT (없으면 auth 스킵)'
+    required: false
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Configure git auth for private gem
+      if: inputs.gem-token != ''
+      shell: bash
+      env:
+        GEM_TOKEN: ${{ inputs.gem-token }}
+      run: |
+        git config --global url."https://x-access-token:${GEM_TOKEN}@github.com/".insteadOf "https://github.com/"
+        echo "✅ Git auth configured for private gem"
+
+    - name: Setup Ruby + Bundler
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: ${{ inputs.ruby-version }}
+        working-directory: ${{ inputs.working-directory }}
+        bundler-cache: true

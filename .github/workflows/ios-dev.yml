@@ -11,6 +11,8 @@
 #         bundle_id_dev: com.lifeadmin.app.dev
 #         apple_team_id: <Apple Team ID>
 #       secrets: inherit
+#
+# v1.1.0: composite으로 추출.
 
 name: iOS Dev (TestFlight Internal)
 
@@ -59,95 +61,42 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Extract version (tag 또는 pubspec)
+      - name: Verify version (tag↔pubspec, dev는 main 강제 X)
         id: version
-        env:
-          GH_EVENT: ${{ github.event_name }}
-          GH_REF: ${{ github.ref }}
-          GH_REF_NAME: ${{ github.ref_name }}
-        run: |
-          if [[ "$GH_EVENT" == "push" && "$GH_REF" == refs/tags/* ]]; then
-            VERSION=$(echo "$GH_REF_NAME" | sed 's/^v//' | sed -E 's/-(prod|dev)-(ios|android|all)$//')
-          else
-            VERSION=$(grep "^version:" pubspec.yaml | sed 's/version: //')
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/verify-version
+        with:
+          enforce-main: 'false'
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+      - name: Setup Flutter (+ env decode + build_runner)
+        uses: ./.github/actions/setup-flutter
         with:
           flutter-version: ${{ inputs.flutter_version }}
-          channel: 'stable'
-          cache: true
-
-      - name: Flutter pub get
-        run: flutter pub get
+          env-file-name: '.env.dev'
+          env-file-content: ${{ secrets.ENV_DEV }}
 
       - name: Setup CocoaPods
+        shell: bash
         run: |
           if ! pod --version &> /dev/null; then
             arch -arm64 brew reinstall cocoapods || arch -arm64 brew install cocoapods
           fi
           cd ios && arch -arm64 pod install --repo-update
 
-      - name: Decode .env.dev (optional)
-        if: env.ENV_DEV != ''
-        env:
-          ENV_DEV: ${{ secrets.ENV_DEV }}
-        run: echo "$ENV_DEV" | base64 --decode > .env.dev
-
-      - name: Generate code (build_runner)
-        run: |
-          if grep -q "build_runner" pubspec.yaml; then
-            dart run build_runner build --delete-conflicting-outputs
-          fi
-
-      - name: Setup Ruby + Bundler
-        uses: ruby/setup-ruby@v1
+      - name: Setup Ruby (+ private gem auth + bundle)
+        uses: ./.github/actions/setup-ruby
         with:
-          ruby-version: '3.3'
           working-directory: ios
-          bundler-cache: true
+          gem-token: ${{ secrets.PLUGIN_GIT_TOKEN || secrets.MATCH_GIT_TOKEN }}
 
-      - name: Configure git auth for private gem
-        env:
-          PLUGIN_GIT_TOKEN: ${{ secrets.PLUGIN_GIT_TOKEN || secrets.MATCH_GIT_TOKEN }}
-        run: |
-          git config --global url."https://x-access-token:${PLUGIN_GIT_TOKEN}@github.com/".insteadOf "https://github.com/"
-
-      - name: Bundle install
-        working-directory: ios
-        run: bundle install --jobs=4
-
-      - name: Match — install Distribution profile (dev bundle id 용)
-        env:
-          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
-          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_TOKEN }}
-        working-directory: ios
-        run: bundle exec fastlane match appstore --readonly --app_identifier ${{ inputs.bundle_id_dev }}
-
-      - name: Generate ExportOptions.plist (match 프로필 명시)
-        run: |
-          PROFILE_NAME="match AppStore ${{ inputs.bundle_id_dev }}"
-          cat > ios/ExportOptions.plist <<PLIST
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>destination</key>           <string>export</string>
-            <key>method</key>                <string>app-store-connect</string>
-            <key>teamID</key>                <string>${{ inputs.apple_team_id }}</string>
-            <key>signingStyle</key>          <string>manual</string>
-            <key>signingCertificate</key>    <string>Apple Distribution</string>
-            <key>provisioningProfiles</key>
-            <dict>
-              <key>${{ inputs.bundle_id_dev }}</key>
-              <string>$PROFILE_NAME</string>
-            </dict>
-            <key>uploadSymbols</key>         <true/>
-          </dict>
-          </plist>
-          PLIST
+      - name: Setup iOS signing (match + ExportOptions.plist)
+        uses: ./.github/actions/setup-ios-signing
+        with:
+          bundle-id: ${{ inputs.bundle_id_dev }}
+          apple-team-id: ${{ inputs.apple_team_id }}
+          match-password: ${{ secrets.MATCH_PASSWORD }}
+          match-git-token: ${{ secrets.MATCH_GIT_TOKEN }}
+          match-type: appstore
+          working-directory: ios
 
       - name: Build IPA
         env:

@@ -1,0 +1,67 @@
+# 버전 검증 — tag→pubspec match + 옵션 main 브랜치 강제
+#
+# 호출 예:
+#   - uses: ./.github/actions/verify-version
+#     id: version
+#     with:
+#       enforce-main: true   # prod에서 main 브랜치 강제. dev에선 false 또는 생략.
+#
+# outputs.version 으로 추출한 버전 (예: '1.0.1+17') 노출. 다운스트림 step에서:
+#   ${{ steps.version.outputs.version }}
+#
+# 동작:
+# - push tag 이벤트면 tag에서 버전 추출 + pubspec.yaml과 매치 검증
+# - 그 외 (workflow_dispatch 등)는 pubspec.yaml에서 직접 추출 (검증 스킵)
+
+name: 'Verify version'
+description: 'Tag/pubspec 버전 매치 검증 + 옵션 main 브랜치 강제'
+
+inputs:
+  enforce-main:
+    description: 'true면 push tag가 main 브랜치 위에 있어야 함 (운영 배포용)'
+    required: false
+    default: 'false'
+
+outputs:
+  version:
+    description: '추출한 버전 문자열 (예: 1.0.1+17)'
+    value: ${{ steps.extract.outputs.version }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Verify tag is on main branch
+      if: inputs.enforce-main == 'true' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+      shell: bash
+      env:
+        GH_SHA: ${{ github.sha }}
+      run: |
+        if ! git branch -r --contains "$GH_SHA" | grep -q 'origin/main'; then
+          echo "::error::운영 배포 태그는 main 브랜치에서만 생성해야 합니다."
+          git branch -r --contains "$GH_SHA"
+          exit 1
+        fi
+        echo "✅ main 브랜치 확인 완료"
+
+    - name: Extract version + verify pubspec match
+      id: extract
+      shell: bash
+      env:
+        GH_EVENT: ${{ github.event_name }}
+        GH_REF: ${{ github.ref }}
+        GH_REF_NAME: ${{ github.ref_name }}
+      run: |
+        if [[ "$GH_EVENT" == "push" && "$GH_REF" == refs/tags/* ]]; then
+          # v1.0.0+1-prod-ios → 1.0.0+1
+          VERSION=$(echo "$GH_REF_NAME" | sed 's/^v//' | sed -E 's/-(prod|dev)-(ios|android|all)$//')
+          PUBSPEC_VERSION=$(grep "^version:" pubspec.yaml | sed 's/version: //')
+          echo "Tag version:     $VERSION"
+          echo "Pubspec version: $PUBSPEC_VERSION"
+          if [ "$VERSION" != "$PUBSPEC_VERSION" ]; then
+            echo "::error::Tag version ($VERSION) != pubspec.yaml ($PUBSPEC_VERSION)"
+            exit 1
+          fi
+        else
+          VERSION=$(grep "^version:" pubspec.yaml | sed 's/version: //')
+        fi
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"

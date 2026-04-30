@@ -1,0 +1,93 @@
+# iOS 서명 셋업 — fastlane match readonly + ExportOptions.plist 생성
+#
+# 호출 예:
+#   - uses: ./.github/actions/setup-ios-signing
+#     with:
+#       bundle-id: com.lifeadmin.app
+#       apple-team-id: ABCDE12345
+#       match-password: ${{ secrets.MATCH_PASSWORD }}
+#       match-git-token: ${{ secrets.MATCH_GIT_TOKEN }}
+#
+# 전제: 호출 전에 setup-ruby composite 실행 완료 (bundle exec fastlane 가능 상태).
+# match-type 기본 'appstore' — TestFlight Internal/AppStore 둘 다 동일 프로필 사용.
+
+name: 'Setup iOS Signing'
+description: 'fastlane match readonly + ExportOptions.plist 생성'
+
+inputs:
+  bundle-id:
+    description: 'Bundle Identifier (예: com.lifeadmin.app)'
+    required: true
+  apple-team-id:
+    description: 'Apple Developer Team ID'
+    required: true
+  match-password:
+    description: 'fastlane match 인증서 암호'
+    required: true
+  match-git-token:
+    description: 'match-certificates repo 접근용 PAT'
+    required: true
+  match-type:
+    description: 'match 인증서 타입 (appstore/development/adhoc/enterprise)'
+    required: false
+    default: 'appstore'
+  working-directory:
+    description: 'fastlane 실행 디렉토리 (보통 ios)'
+    required: false
+    default: 'ios'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Match — Install Apple Distribution certificate + provisioning profile
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        MATCH_PASSWORD: ${{ inputs.match-password }}
+        MATCH_GIT_BASIC_AUTHORIZATION: ${{ inputs.match-git-token }}
+        MATCH_TYPE: ${{ inputs.match-type }}
+        BUNDLE_ID: ${{ inputs.bundle-id }}
+      run: |
+        bundle exec fastlane match "$MATCH_TYPE" --readonly --app_identifier "$BUNDLE_ID"
+
+    # match가 설치한 manual signing 프로필 이름은 "match {Type} <bundle_id>" 컨벤션 (Type은 capitalize).
+    # ExportOptions.plist를 명시 안 하면 flutter build ipa가 signingStyle: automatic으로 폴백 →
+    # match 프로필을 못 찾아 "No signing identity matches profile" 실패.
+    - name: Generate ExportOptions.plist (match 프로필 명시)
+      shell: bash
+      env:
+        MATCH_TYPE: ${{ inputs.match-type }}
+        BUNDLE_ID: ${{ inputs.bundle-id }}
+        APPLE_TEAM_ID: ${{ inputs.apple-team-id }}
+      run: |
+        # match 프로필 명명 규칙: 'match {Type capitalized} <bundle_id>'
+        # 예: type=appstore → "match AppStore com.example.app"
+        case "$MATCH_TYPE" in
+          appstore)     PROFILE_TYPE="AppStore" ;;
+          development)  PROFILE_TYPE="Development" ;;
+          adhoc)        PROFILE_TYPE="AdHoc" ;;
+          enterprise)   PROFILE_TYPE="InHouse" ;;
+          *)            echo "::error::Unknown match-type: $MATCH_TYPE"; exit 1 ;;
+        esac
+        PROFILE_NAME="match ${PROFILE_TYPE} ${BUNDLE_ID}"
+
+        cat > ios/ExportOptions.plist <<PLIST
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+          <key>destination</key>           <string>export</string>
+          <key>method</key>                <string>app-store-connect</string>
+          <key>teamID</key>                <string>${APPLE_TEAM_ID}</string>
+          <key>signingStyle</key>          <string>manual</string>
+          <key>signingCertificate</key>    <string>Apple Distribution</string>
+          <key>provisioningProfiles</key>
+          <dict>
+            <key>${BUNDLE_ID}</key>
+            <string>${PROFILE_NAME}</string>
+          </dict>
+          <key>uploadSymbols</key>         <true/>
+        </dict>
+        </plist>
+        PLIST
+        echo "✅ ExportOptions.plist generated (profile: $PROFILE_NAME)"

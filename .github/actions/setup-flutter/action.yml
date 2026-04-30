@@ -1,0 +1,64 @@
+# Flutter 셋업 + pub get + 환경변수 디코딩 + build_runner
+#
+# 호출 예:
+#   - uses: ./.github/actions/setup-flutter
+#     with:
+#       flutter-version: '3.32.2'
+#       env-file-name: '.env.release'
+#       env-file-content: ${{ secrets.ENV_RELEASE }}
+#
+# env-file-content 비어있으면 디코딩 스킵. build_runner는 pubspec에 선언돼 있을 때만 실행.
+
+name: 'Setup Flutter'
+description: 'Flutter SDK 설치 + pub get + .env 디코딩 + build_runner 실행'
+
+inputs:
+  flutter-version:
+    description: 'Flutter SDK 버전'
+    required: false
+    default: '3.32.2'
+  flutter-channel:
+    description: 'Flutter 채널 (stable/beta)'
+    required: false
+    default: 'stable'
+  env-file-name:
+    description: '디코딩 후 저장할 .env 파일명 (예: .env.release). 비어있으면 디코딩 스킵.'
+    required: false
+    default: ''
+  env-file-content:
+    description: 'base64 인코딩된 .env 파일 내용 (secrets에서 전달)'
+    required: false
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: ${{ inputs.flutter-version }}
+        channel: ${{ inputs.flutter-channel }}
+        cache: true
+
+    - name: Flutter pub get
+      shell: bash
+      run: flutter pub get
+
+    - name: Decode env file (optional)
+      if: inputs.env-file-name != '' && inputs.env-file-content != ''
+      shell: bash
+      env:
+        ENV_FILE_CONTENT: ${{ inputs.env-file-content }}
+        ENV_FILE_NAME: ${{ inputs.env-file-name }}
+      run: |
+        echo "$ENV_FILE_CONTENT" | base64 --decode > "$ENV_FILE_NAME"
+        echo "✅ $ENV_FILE_NAME decoded"
+
+    - name: Generate code (build_runner)
+      shell: bash
+      run: |
+        if grep -q "build_runner" pubspec.yaml; then
+          dart run build_runner build --delete-conflicting-outputs
+        else
+          echo "build_runner not declared — skipping"
+        fi

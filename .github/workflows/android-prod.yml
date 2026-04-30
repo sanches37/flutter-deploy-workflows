@@ -10,6 +10,8 @@
 #       with:
 #         package_name: com.lifeadmin.app
 #       secrets: inherit
+#
+# v1.1.0: composite으로 추출.
 
 name: Android Prod (Play Store)
 
@@ -65,32 +67,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Verify tag is on main branch
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-        run: |
-          if ! git branch -r --contains ${{ github.sha }} | grep -q 'origin/main'; then
-            echo "::error::운영 배포 태그는 main 브랜치에서만"
-            exit 1
-          fi
-
-      - name: Extract version + verify pubspec match
+      - name: Verify version (main 강제 + tag↔pubspec match)
         id: version
-        env:
-          GH_EVENT: ${{ github.event_name }}
-          GH_REF: ${{ github.ref }}
-          GH_REF_NAME: ${{ github.ref_name }}
-        run: |
-          if [[ "$GH_EVENT" == "push" && "$GH_REF" == refs/tags/* ]]; then
-            VERSION=$(echo "$GH_REF_NAME" | sed 's/^v//' | sed -E 's/-(prod|dev)-(ios|android|all)$//')
-            PUBSPEC_VERSION=$(grep "^version:" pubspec.yaml | sed 's/version: //')
-            if [ "$VERSION" != "$PUBSPEC_VERSION" ]; then
-              echo "::error::Tag ($VERSION) != pubspec ($PUBSPEC_VERSION)"
-              exit 1
-            fi
-          else
-            VERSION=$(grep "^version:" pubspec.yaml | sed 's/version: //')
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/verify-version
+        with:
+          enforce-main: 'true'
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -98,27 +79,12 @@ jobs:
           distribution: 'temurin'
           java-version: ${{ inputs.java_version }}
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+      - name: Setup Flutter (+ env decode + build_runner)
+        uses: ./.github/actions/setup-flutter
         with:
           flutter-version: ${{ inputs.flutter_version }}
-          channel: 'stable'
-          cache: true
-
-      - name: Flutter pub get
-        run: flutter pub get
-
-      - name: Decode .env.release (optional)
-        if: env.ENV_RELEASE != ''
-        env:
-          ENV_RELEASE: ${{ secrets.ENV_RELEASE }}
-        run: echo "$ENV_RELEASE" | base64 --decode > .env.release
-
-      - name: Generate code (build_runner)
-        run: |
-          if grep -q "build_runner" pubspec.yaml; then
-            dart run build_runner build --delete-conflicting-outputs
-          fi
+          env-file-name: '.env.release'
+          env-file-content: ${{ secrets.ENV_RELEASE }}
 
       - name: Decode release keystore
         env:
@@ -178,24 +144,11 @@ jobs:
           echo "AAB_PATH=$AAB_PATH" >> "$GITHUB_ENV"
           echo "📦 AAB: $AAB_PATH ($(du -h "$AAB_FILE" | cut -f1))"
 
-      - name: Setup Ruby + Bundler
-        uses: ruby/setup-ruby@v1
+      - name: Setup Ruby (+ private gem auth + bundle)
+        uses: ./.github/actions/setup-ruby
         with:
-          ruby-version: '3.3'
           working-directory: android
-          bundler-cache: true
-
-      - name: Configure git auth for private gem
-        env:
-          PLUGIN_GIT_TOKEN: ${{ secrets.PLUGIN_GIT_TOKEN || secrets.MATCH_GIT_TOKEN }}
-        run: |
-          if [ -n "$PLUGIN_GIT_TOKEN" ]; then
-            git config --global url."https://x-access-token:${PLUGIN_GIT_TOKEN}@github.com/".insteadOf "https://github.com/"
-          fi
-
-      - name: Bundle install (android/Gemfile)
-        working-directory: android
-        run: bundle install --jobs=4
+          gem-token: ${{ secrets.PLUGIN_GIT_TOKEN || secrets.MATCH_GIT_TOKEN }}
 
       - name: Fastlane — Play Store 업로드
         working-directory: android
