@@ -1,0 +1,179 @@
+# iOS Dev 배포 (TestFlight Internal Testing) - reusable workflow
+#
+# 호출 측 예시:
+#   on:
+#     push:
+#       tags: ['v*-dev-ios']
+#   jobs:
+#     deploy:
+#       uses: sanches37/flutter-deploy-workflows/.github/workflows/ios-dev.yml@v1
+#       with:
+#         bundle_id_dev: com.lifeadmin.app.dev
+#         apple_team_id: <Apple Team ID>
+#       secrets: inherit
+
+name: iOS Dev (TestFlight Internal)
+
+on:
+  workflow_call:
+    inputs:
+      bundle_id_dev:
+        type: string
+        required: true
+        description: 'Dev Bundle ID (예: com.lifeadmin.app.dev)'
+      apple_team_id:
+        type: string
+        required: true
+      flutter_version:
+        type: string
+        default: '3.32.2'
+      flavor:
+        type: string
+        default: 'dev'
+      runner:
+        type: string
+        default: 'macos-latest'
+    secrets:
+      ASC_KEY_ID:
+        required: true
+      ASC_ISSUER_ID:
+        required: true
+      ASC_PRIVATE_KEY:
+        required: true
+      MATCH_PASSWORD:
+        required: true
+      MATCH_GIT_TOKEN:
+        required: true
+      PLUGIN_GIT_TOKEN:
+        required: false
+      ENV_DEV:
+        required: false
+
+jobs:
+  build-and-deploy:
+    name: Build & Upload to TestFlight Internal
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract version (tag 또는 pubspec)
+        id: version
+        env:
+          GH_EVENT: ${{ github.event_name }}
+          GH_REF: ${{ github.ref }}
+          GH_REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [[ "$GH_EVENT" == "push" && "$GH_REF" == refs/tags/* ]]; then
+            VERSION=$(echo "$GH_REF_NAME" | sed 's/^v//' | sed -E 's/-(prod|dev)-(ios|android|all)$//')
+          else
+            VERSION=$(grep "^version:" pubspec.yaml | sed 's/version: //')
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ inputs.flutter_version }}
+          channel: 'stable'
+          cache: true
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Setup CocoaPods
+        run: |
+          if ! pod --version &> /dev/null; then
+            arch -arm64 brew reinstall cocoapods || arch -arm64 brew install cocoapods
+          fi
+          cd ios && arch -arm64 pod install --repo-update
+
+      - name: Decode .env.dev (optional)
+        if: env.ENV_DEV != ''
+        env:
+          ENV_DEV: ${{ secrets.ENV_DEV }}
+        run: echo "$ENV_DEV" | base64 --decode > .env.dev
+
+      - name: Generate code (build_runner)
+        run: |
+          if grep -q "build_runner" pubspec.yaml; then
+            dart run build_runner build --delete-conflicting-outputs
+          fi
+
+      - name: Setup Ruby + Bundler
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          working-directory: ios
+          bundler-cache: true
+
+      - name: Configure git auth for private gem
+        env:
+          PLUGIN_GIT_TOKEN: ${{ secrets.PLUGIN_GIT_TOKEN || secrets.MATCH_GIT_TOKEN }}
+        run: |
+          git config --global url."https://x-access-token:${PLUGIN_GIT_TOKEN}@github.com/".insteadOf "https://github.com/"
+
+      - name: Bundle install
+        working-directory: ios
+        run: bundle install --jobs=4
+
+      - name: Match — install Distribution profile (dev bundle id 용)
+        env:
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_TOKEN }}
+        working-directory: ios
+        run: bundle exec fastlane match appstore --readonly --app_identifier ${{ inputs.bundle_id_dev }}
+
+      - name: Generate ExportOptions.plist (match 프로필 명시)
+        run: |
+          PROFILE_NAME="match AppStore ${{ inputs.bundle_id_dev }}"
+          cat > ios/ExportOptions.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>destination</key>           <string>export</string>
+            <key>method</key>                <string>app-store-connect</string>
+            <key>teamID</key>                <string>${{ inputs.apple_team_id }}</string>
+            <key>signingStyle</key>          <string>manual</string>
+            <key>signingCertificate</key>    <string>Apple Distribution</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>${{ inputs.bundle_id_dev }}</key>
+              <string>$PROFILE_NAME</string>
+            </dict>
+            <key>uploadSymbols</key>         <true/>
+          </dict>
+          </plist>
+          PLIST
+
+      - name: Build IPA
+        env:
+          TMPDIR: ${{ runner.temp }}/xcode-dev
+        run: |
+          mkdir -p "$TMPDIR"
+          flutter build ipa --release --flavor ${{ inputs.flavor }} --export-options-plist=ios/ExportOptions.plist
+
+      - name: Verify IPA + export path
+        run: |
+          IPA_FILE=$(find build/ios/ipa -name "*.ipa" | head -1)
+          [ -f "$IPA_FILE" ] || { echo "::error::IPA not found"; exit 1; }
+          IPA_PATH="$GITHUB_WORKSPACE/$IPA_FILE"
+          echo "IPA_PATH=$IPA_PATH" >> "$GITHUB_ENV"
+
+      - name: Fastlane — TestFlight Internal 업로드
+        working-directory: ios
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          IPA_PATH: ${{ env.IPA_PATH }}
+        run: bundle exec fastlane dev_release
+
+      - name: Summary
+        run: |
+          echo "✅ TestFlight Internal Testing 업로드 완료"
+          echo "Bundle: ${{ inputs.bundle_id_dev }}"
+          echo "Version: ${{ steps.version.outputs.version }}"

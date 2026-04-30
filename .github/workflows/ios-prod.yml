@@ -1,0 +1,240 @@
+# iOS Prod 배포 (App Store) - reusable workflow
+#
+# 호출 측 예시 (life_admin/.github/workflows/deploy-ios-prod.yml):
+#   on:
+#     push:
+#       tags: ['v*-prod-ios']
+#   jobs:
+#     deploy:
+#       uses: sanches37/flutter-deploy-workflows/.github/workflows/ios-prod.yml@v1
+#       with:
+#         bundle_id: com.lifeadmin.app
+#         apple_team_id: <Apple Team ID>
+#       secrets: inherit
+#
+# 동작: pubspec 버전 검증 → match로 인증서 설치 → IPA 빌드 → fastlane action으로 메타+TestFlight+심사 제출
+
+name: iOS Prod (App Store)
+
+on:
+  workflow_call:
+    inputs:
+      bundle_id:
+        type: string
+        required: true
+        description: 'Prod Bundle ID (예: com.lifeadmin.app)'
+      apple_team_id:
+        type: string
+        required: true
+        description: 'Apple Developer Team ID'
+      flutter_version:
+        type: string
+        default: '3.32.2'
+      flavor:
+        type: string
+        default: 'prod'
+        description: 'Flutter flavor (Release-Prod.xcconfig 매칭)'
+      runner:
+        type: string
+        default: 'macos-latest'
+    secrets:
+      ASC_KEY_ID:
+        required: true
+      ASC_ISSUER_ID:
+        required: true
+      ASC_PRIVATE_KEY:
+        required: true
+      MATCH_PASSWORD:
+        required: true
+      MATCH_GIT_TOKEN:
+        required: true
+        description: 'sanches37/match-certificates 접근용 PAT (repo 스코프)'
+      PLUGIN_GIT_TOKEN:
+        required: false
+        description: 'sanches37/fastlane-plugin-sanches37_deploy private 접근용 PAT. 미설정 시 MATCH_GIT_TOKEN 재사용'
+      ENV_RELEASE:
+        required: false
+        description: 'base64 인코딩된 .env.release 파일 (선택)'
+
+jobs:
+  build-and-deploy:
+    name: Build & Submit to App Store
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag is on main branch
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        run: |
+          if ! git branch -r --contains ${{ github.sha }} | grep -q 'origin/main'; then
+            echo "::error::운영 배포 태그는 main 브랜치에서만 생성해야 합니다."
+            git branch -r --contains ${{ github.sha }}
+            exit 1
+          fi
+          echo "✅ main 브랜치 확인 완료"
+
+      - name: Extract version from tag and verify pubspec match
+        id: version
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        run: |
+          TAG="${{ github.ref_name }}"
+          # v1.0.0+1-prod-ios → 1.0.0+1
+          VERSION=$(echo "$TAG" | sed 's/^v//' | sed -E 's/-(prod|dev)-(ios|android|all)$//')
+          PUBSPEC_VERSION=$(grep "^version:" pubspec.yaml | sed 's/version: //')
+          echo "Tag version:     $VERSION"
+          echo "Pubspec version: $PUBSPEC_VERSION"
+          if [ "$VERSION" != "$PUBSPEC_VERSION" ]; then
+            echo "::error::Tag version ($VERSION) != pubspec.yaml ($PUBSPEC_VERSION)"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Fallback version (manual run)
+        id: version_manual
+        if: steps.version.outcome == 'skipped'
+        run: |
+          VERSION=$(grep "^version:" pubspec.yaml | sed 's/version: //')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ inputs.flutter_version }}
+          channel: 'stable'
+          cache: true
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: "Setup CocoaPods (베달판 보존: 깨졌으면 reinstall)"
+        run: |
+          if ! pod --version &> /dev/null; then
+            echo "📦 CocoaPods not working, reinstalling via Homebrew..."
+            arch -arm64 brew reinstall cocoapods || arch -arm64 brew install cocoapods
+          fi
+          echo "✅ CocoaPods version: $(pod --version)"
+          cd ios && arch -arm64 pod install --repo-update
+
+      - name: Decode .env.release (optional)
+        if: env.ENV_RELEASE != ''
+        env:
+          ENV_RELEASE: ${{ secrets.ENV_RELEASE }}
+        run: |
+          echo "$ENV_RELEASE" | base64 --decode > .env.release
+          echo "✅ .env.release decoded"
+
+      - name: Generate code (build_runner)
+        run: |
+          if grep -q "build_runner" pubspec.yaml; then
+            dart run build_runner build --delete-conflicting-outputs
+          else
+            echo "build_runner not declared — skipping"
+          fi
+
+      - name: Setup Ruby + Bundler (fastlane plugin 환경)
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          working-directory: ios
+          bundler-cache: true
+
+      - name: Configure git auth for private gem
+        env:
+          PLUGIN_GIT_TOKEN: ${{ secrets.PLUGIN_GIT_TOKEN || secrets.MATCH_GIT_TOKEN }}
+        run: |
+          # Bundler가 private GitHub gem을 받을 수 있도록 https 토큰 주입
+          git config --global url."https://x-access-token:${PLUGIN_GIT_TOKEN}@github.com/".insteadOf "https://github.com/"
+
+      - name: Bundle install (ios/Gemfile)
+        working-directory: ios
+        run: bundle install --jobs=4
+
+      - name: Match — Install Apple Distribution certificate + provisioning profile
+        env:
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_TOKEN }}
+        working-directory: ios
+        run: bundle exec fastlane match appstore --readonly --app_identifier ${{ inputs.bundle_id }}
+
+      - name: Clean build artifacts
+        run: |
+          rm -rf build/ios || true
+          rm -rf ios/build || true
+          rm -rf ~/Library/Developer/Xcode/DerivedData/* 2>/dev/null || true
+          rm -rf /var/folders/*/*/XcodeDistPipeline* 2>/dev/null || true
+          flutter clean
+          flutter pub get
+          cd ios && arch -arm64 pod install
+
+      # match가 설치한 manual signing 프로필 이름은 "match AppStore <bundle_id>" 컨벤션.
+      # ExportOptions.plist를 명시 안 하면 flutter build ipa가 signingStyle: automatic으로 폴백 →
+      # match 프로필을 못 찾아 "No signing identity matches profile" 실패. 사전 방어.
+      - name: Generate ExportOptions.plist (match 프로필 명시)
+        run: |
+          PROFILE_NAME="match AppStore ${{ inputs.bundle_id }}"
+          cat > ios/ExportOptions.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>destination</key>           <string>export</string>
+            <key>method</key>                <string>app-store-connect</string>
+            <key>teamID</key>                <string>${{ inputs.apple_team_id }}</string>
+            <key>signingStyle</key>          <string>manual</string>
+            <key>signingCertificate</key>    <string>Apple Distribution</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>${{ inputs.bundle_id }}</key>
+              <string>$PROFILE_NAME</string>
+            </dict>
+            <key>uploadSymbols</key>         <true/>
+          </dict>
+          </plist>
+          PLIST
+          echo "✅ ExportOptions.plist generated (profile: $PROFILE_NAME)"
+
+      - name: Build IPA (TMPDIR 격리로 codesign 충돌 방지)
+        env:
+          TMPDIR: ${{ runner.temp }}/xcode-prod
+        run: |
+          mkdir -p "$TMPDIR"
+          flutter build ipa --release --flavor ${{ inputs.flavor }} --export-options-plist=ios/ExportOptions.plist
+
+      - name: Verify IPA + export absolute path
+        run: |
+          IPA_FILE=$(find build/ios/ipa -name "*.ipa" | head -1)
+          if [ ! -f "$IPA_FILE" ]; then
+            echo "::error::IPA not found"
+            ls -la build/ios/ipa/ 2>/dev/null || true
+            exit 1
+          fi
+          IPA_PATH="$GITHUB_WORKSPACE/$IPA_FILE"
+          echo "✅ IPA: $IPA_PATH ($(du -h "$IPA_FILE" | cut -f1))"
+          echo "IPA_PATH=$IPA_PATH" >> "$GITHUB_ENV"
+
+      - name: Fastlane — TestFlight + 심사 제출 (sanches37_deploy plugin)
+        working-directory: ios
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          IPA_PATH: ${{ env.IPA_PATH }}
+          APP_VERSION: ${{ steps.version.outputs.version || steps.version_manual.outputs.version }}
+        run: bundle exec fastlane prod_release_and_submit
+
+      - name: Deployment summary
+        run: |
+          VERSION="${{ steps.version.outputs.version || steps.version_manual.outputs.version }}"
+          echo "========================================="
+          echo "  ✅ iOS App Store 심사 제출 완료"
+          echo "========================================="
+          echo "Version:   $VERSION"
+          echo "Bundle ID: ${{ inputs.bundle_id }}"
+          echo "Tag:       ${{ github.ref_name }}"
+          echo ""
+          echo "📱 App Store Connect: https://appstoreconnect.apple.com/apps"

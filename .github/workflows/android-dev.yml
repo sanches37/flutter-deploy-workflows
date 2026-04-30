@@ -1,0 +1,176 @@
+# Android Dev 배포 (Firebase App Distribution) - reusable workflow
+#
+# 호출 측 예시:
+#   on:
+#     push:
+#       tags: ['v*-dev-android']
+#   jobs:
+#     deploy:
+#       uses: sanches37/flutter-deploy-workflows/.github/workflows/android-dev.yml@v1
+#       with:
+#         package_name_dev: com.lifeadmin.app.dev
+#         firebase_app_id: 1:1234:android:abcd
+#       secrets: inherit
+
+name: Android Dev (Firebase App Distribution)
+
+on:
+  workflow_call:
+    inputs:
+      package_name_dev:
+        type: string
+        required: true
+      firebase_app_id:
+        type: string
+        required: true
+        description: 'Firebase Android App ID (예: 1:1234:android:abcd)'
+      tester_groups:
+        type: string
+        default: 'test'
+      flutter_version:
+        type: string
+        default: '3.32.2'
+      java_version:
+        type: string
+        default: '17'
+      flavor:
+        type: string
+        default: 'dev'
+      runner:
+        type: string
+        default: 'ubuntu-latest'
+    secrets:
+      FIREBASE_SERVICE_ACCOUNT_JSON:
+        required: true
+      RELEASE_KEYSTORE_BASE64:
+        required: false
+      RELEASE_KEYSTORE_PASSWORD:
+        required: false
+      RELEASE_KEY_PASSWORD:
+        required: false
+      RELEASE_KEY_ALIAS:
+        required: false
+      PLUGIN_GIT_TOKEN:
+        required: false
+      MATCH_GIT_TOKEN:
+        required: false
+      ENV_DEV:
+        required: false
+
+jobs:
+  build-and-deploy:
+    name: Build APK & Upload to Firebase
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract version
+        id: version
+        env:
+          GH_EVENT: ${{ github.event_name }}
+          GH_REF: ${{ github.ref }}
+          GH_REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [[ "$GH_EVENT" == "push" && "$GH_REF" == refs/tags/* ]]; then
+            VERSION=$(echo "$GH_REF_NAME" | sed 's/^v//' | sed -E 's/-(prod|dev)-(ios|android|all)$//')
+          else
+            VERSION=$(grep "^version:" pubspec.yaml | sed 's/version: //')
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ inputs.java_version }}
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ inputs.flutter_version }}
+          channel: 'stable'
+          cache: true
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Decode .env.dev (optional)
+        if: env.ENV_DEV != ''
+        env:
+          ENV_DEV: ${{ secrets.ENV_DEV }}
+        run: echo "$ENV_DEV" | base64 --decode > .env.dev
+
+      - name: Generate code (build_runner)
+        run: |
+          if grep -q "build_runner" pubspec.yaml; then
+            dart run build_runner build --delete-conflicting-outputs
+          fi
+
+      - name: Decode release keystore (optional, dev에서도 release 빌드 시)
+        if: env.RELEASE_KEYSTORE_BASE64 != ''
+        env:
+          KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          mkdir -p android/app/keystore
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/keystore/release.jks
+          cat > android/key.properties <<PROPS
+          storeFile=keystore/release.jks
+          storePassword=${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.RELEASE_KEY_ALIAS }}
+          keyPassword=${{ secrets.RELEASE_KEY_PASSWORD }}
+          PROPS
+
+      - name: Decode Firebase service account JSON
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          FIREBASE_SA_PATH="$RUNNER_TEMP/firebase-service-account.json"
+          echo "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$FIREBASE_SA_PATH"
+          echo "FIREBASE_SERVICE_ACCOUNT_PATH=$FIREBASE_SA_PATH" >> "$GITHUB_ENV"
+
+      - name: Build APK
+        run: flutter build apk --release --flavor ${{ inputs.flavor }}
+
+      - name: Verify APK + export path
+        run: |
+          APK_FILE=$(find build/app/outputs/flutter-apk -name "*.apk" | head -1)
+          [ -f "$APK_FILE" ] || { echo "::error::APK not found"; ls -R build/app/outputs/flutter-apk 2>/dev/null || true; exit 1; }
+          APK_PATH="$GITHUB_WORKSPACE/$APK_FILE"
+          echo "APK_PATH=$APK_PATH" >> "$GITHUB_ENV"
+
+      - name: Setup Ruby + Bundler
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          working-directory: android
+          bundler-cache: true
+
+      - name: Configure git auth for private gem
+        env:
+          PLUGIN_GIT_TOKEN: ${{ secrets.PLUGIN_GIT_TOKEN || secrets.MATCH_GIT_TOKEN }}
+        run: |
+          if [ -n "$PLUGIN_GIT_TOKEN" ]; then
+            git config --global url."https://x-access-token:${PLUGIN_GIT_TOKEN}@github.com/".insteadOf "https://github.com/"
+          fi
+
+      - name: Bundle install
+        working-directory: android
+        run: bundle install --jobs=4
+
+      - name: Fastlane — Firebase App Distribution
+        working-directory: android
+        env:
+          FIREBASE_SERVICE_ACCOUNT_PATH: ${{ env.FIREBASE_SERVICE_ACCOUNT_PATH }}
+          APK_PATH: ${{ env.APK_PATH }}
+          RELEASE_NOTES: "tag: ${{ github.ref_name }} (${{ steps.version.outputs.version }})"
+        run: bundle exec fastlane dev_release
+
+      - name: Summary
+        run: |
+          echo "✅ Firebase App Distribution 배포 완료"
+          echo "Firebase App ID: ${{ inputs.firebase_app_id }}"
+          echo "Tester Groups:   ${{ inputs.tester_groups }}"
+          echo "Version:         ${{ steps.version.outputs.version }}"
