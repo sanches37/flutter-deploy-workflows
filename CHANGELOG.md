@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-05-07
+
+### Fixed
+- `setup-ruby`: `bundler: latest` 추가 — Ruby 3.2+에서 `untaint` 제거로 Bundler 1.17.2 실패하는 문제 수정 (Gemfile.lock `BUNDLED WITH` 버전 무시하고 최신 Bundler 사용)
+
 ## [1.5.1] - 2026-05-07
 
 ### Fixed

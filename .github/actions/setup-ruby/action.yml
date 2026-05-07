@@ -44,4 +44,5 @@ runs:
       with:
         ruby-version: ${{ inputs.ruby-version }}
         working-directory: ${{ inputs.working-directory }}
+        bundler: latest
         bundler-cache: true
