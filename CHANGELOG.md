@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [1.5.6] - 2026-05-08
+
+### Fixed
+- `ios-dev.yml`, `ios-prod.yml`: `FLUTTER_XCODE_*` 제거 — Pod 타겟 전체에 `PROVISIONING_PROFILE_SPECIFIER` 전파 문제 수정
+- `ios-dev.yml`, `ios-prod.yml`: Setup iOS signing 후 `perl`+`Ruby`로 Runner.xcodeproj/project.pbxproj 직접 수정 — Runner 타겟에만 수동 서명 주입 (baedalpan 패턴)
+
 ## [1.5.5] - 2026-05-07
 
 ### Fixed

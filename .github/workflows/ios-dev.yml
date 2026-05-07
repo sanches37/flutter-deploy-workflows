@@ -58,7 +58,7 @@ jobs:
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 60
     env:
-      DEPLOY_WF_REF: refs/tags/v1.5.5
+      DEPLOY_WF_REF: refs/tags/v1.5.6
 
     steps:
       - name: Checkout
@@ -117,14 +117,40 @@ jobs:
           match-type: appstore
           working-directory: ios
 
+      - name: Set Manual Signing in project.pbxproj
+        shell: bash
+        env:
+          BUNDLE_ID: ${{ inputs.bundle_id_dev }}
+        run: |
+          PROJECT_FILE="ios/Runner.xcodeproj/project.pbxproj"
+          PROFILE_NAME="match AppStore ${BUNDLE_ID}"
+
+          # CODE_SIGN_STYLE: Automatic → Manual (전체)
+          perl -pi -e 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' "$PROJECT_FILE"
+          # CODE_SIGN_IDENTITY → Apple Distribution (iphoneos)
+          perl -pi -e 's/"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "iPhone Developer";/"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution";/g' "$PROJECT_FILE"
+
+          # Runner target 블록에만 PROVISIONING_PROFILE_SPECIFIER 추가
+          # (PRODUCT_BUNDLE_IDENTIFIER = com.lifeadmin.mobile 가 있고 .RunnerTests 아닌 블록)
+          BUNDLE_ID="$BUNDLE_ID" PROFILE_NAME="$PROFILE_NAME" ruby << 'RUBY_EOF'
+          file_path = "ios/Runner.xcodeproj/project.pbxproj"
+          profile_name = ENV['PROFILE_NAME']
+          bundle_id = ENV['BUNDLE_ID']
+          content = File.read(file_path)
+          unless content.include?('PROVISIONING_PROFILE_SPECIFIER')
+            content = content.gsub(/(PRODUCT_BUNDLE_IDENTIFIER = #{Regexp.escape(bundle_id)};)/) do |match|
+              "#{match}\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"#{profile_name}\";"
+            end
+            File.write(file_path, content)
+            puts "✅ PROVISIONING_PROFILE_SPECIFIER = #{profile_name}"
+          end
+          RUBY_EOF
+          echo "✅ Manual signing configured"
+
       - name: Build IPA
         env:
           TMPDIR: ${{ runner.temp }}/xcode-dev
           FLAVOR: ${{ inputs.flavor }}
-          FLUTTER_XCODE_CODE_SIGN_STYLE: Manual
-          FLUTTER_XCODE_CODE_SIGN_IDENTITY: Apple Distribution
-          FLUTTER_XCODE_PROVISIONING_PROFILE_SPECIFIER: "match AppStore ${{ inputs.bundle_id_dev }}"
-          FLUTTER_XCODE_DEVELOPMENT_TEAM: ${{ inputs.apple_team_id }}
         run: |
           mkdir -p "$TMPDIR"
           FLAVOR_ARGS=""
