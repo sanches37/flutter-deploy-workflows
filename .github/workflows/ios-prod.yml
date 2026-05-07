@@ -62,7 +62,7 @@ jobs:
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 60
     env:
-      DEPLOY_WF_REF: refs/tags/v1.5.6
+      DEPLOY_WF_REF: refs/tags/v1.5.7
 
     steps:
       - name: Checkout
@@ -131,7 +131,9 @@ jobs:
           BUNDLE_ID: ${{ inputs.bundle_id }}
         run: |
           PROJECT_FILE="ios/Runner.xcodeproj/project.pbxproj"
-          PROFILE_NAME="match AppStore ${BUNDLE_ID}"
+          # MATCH_PROFILE_NAME: setup-ios-signing에서 $GITHUB_ENV로 export된 실제 설치 이름
+          # (예: "match AppStore com.lifeadmin.mobile 1778134700"). 없으면 폴백.
+          PROFILE_NAME="${MATCH_PROFILE_NAME:-match AppStore ${BUNDLE_ID}}"
 
           perl -pi -e 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' "$PROJECT_FILE"
           perl -pi -e 's/"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "iPhone Developer";/"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution";/g' "$PROJECT_FILE"

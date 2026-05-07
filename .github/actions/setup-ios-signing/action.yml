@@ -53,6 +53,25 @@ runs:
         export MATCH_GIT_BASIC_AUTHORIZATION
         bundle exec fastlane match "$MATCH_TYPE" --readonly --app_identifier "$BUNDLE_ID"
 
+        # fastlane match는 프로필 이름에 timestamp를 붙이는 경우가 있음
+        # (예: "match AppStore com.lifeadmin.mobile 1778134700").
+        # 설치된 실제 프로필 이름을 추출해서 이후 단계에서 사용.
+        PROFILE_DIR="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+        MATCH_PROFILE_NAME=""
+        for p in "$PROFILE_DIR"/*.mobileprovision; do
+          [ -f "$p" ] || continue
+          c=$(security cms -D -i "$p" 2>/dev/null) || continue
+          echo "$c" | grep -q "$BUNDLE_ID" || continue
+          MATCH_PROFILE_NAME=$(echo "$c" | grep -A1 '<key>Name</key>' | grep '<string>' | sed 's/.*<string>\(.*\)<\/string>/\1/')
+          break
+        done
+        if [ -n "$MATCH_PROFILE_NAME" ]; then
+          echo "MATCH_PROFILE_NAME=$MATCH_PROFILE_NAME" >> "$GITHUB_ENV"
+          echo "✅ Profile name: $MATCH_PROFILE_NAME"
+        else
+          echo "::warning::Could not extract profile name for $BUNDLE_ID; will use constructed fallback"
+        fi
+
     # match가 설치한 manual signing 프로필 이름은 "match {Type} <bundle_id>" 컨벤션 (Type은 capitalize).
     # ExportOptions.plist를 명시 안 하면 flutter build ipa가 signingStyle: automatic으로 폴백 →
     # match 프로필을 못 찾아 "No signing identity matches profile" 실패.
@@ -63,8 +82,6 @@ runs:
         BUNDLE_ID: ${{ inputs.bundle-id }}
         APPLE_TEAM_ID: ${{ inputs.apple-team-id }}
       run: |
-        # match 프로필 명명 규칙: 'match {Type capitalized} <bundle_id>'
-        # 예: type=appstore → "match AppStore com.example.app"
         case "$MATCH_TYPE" in
           appstore)     PROFILE_TYPE="AppStore" ;;
           development)  PROFILE_TYPE="Development" ;;
@@ -72,7 +89,9 @@ runs:
           enterprise)   PROFILE_TYPE="InHouse" ;;
           *)            echo "::error::Unknown match-type: $MATCH_TYPE"; exit 1 ;;
         esac
-        PROFILE_NAME="match ${PROFILE_TYPE} ${BUNDLE_ID}"
+        # MATCH_PROFILE_NAME은 Match 단계에서 $GITHUB_ENV로 export된 실제 설치 이름.
+        # 못 가져왔으면 컨벤션 기반 이름으로 폴백.
+        PROFILE_NAME="${MATCH_PROFILE_NAME:-match ${PROFILE_TYPE} ${BUNDLE_ID}}"
 
         cat > ios/ExportOptions.plist <<PLIST
         <?xml version="1.0" encoding="UTF-8"?>

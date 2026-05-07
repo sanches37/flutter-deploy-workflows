@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+## [1.5.7] - 2026-05-07
+
+### Fixed
+- `setup-ios-signing`: `fastlane match --readonly` 완료 후 설치된 `.mobileprovision` 파일에서 실제 프로필 이름 추출 → `MATCH_PROFILE_NAME`으로 `$GITHUB_ENV` export
+- `ios-dev.yml`, `ios-prod.yml`: "Set Manual Signing" 단계에서 하드코딩된 `"match AppStore <bundle_id>"` 대신 `$MATCH_PROFILE_NAME` 사용 — fastlane match가 timestamp를 붙인 이름(예: `match AppStore com.lifeadmin.mobile 1778134700`)과 Xcode 프로필 검색이 일치하지 않아 발생하는 "No profile found" 오류 수정
+- `setup-ios-signing` ExportOptions.plist도 동일하게 실제 이름 사용 (`MATCH_PROFILE_NAME` 우선, 없으면 기존 컨벤션 폴백)
+
 ## [1.5.6] - 2026-05-08
 
 ### Fixed
