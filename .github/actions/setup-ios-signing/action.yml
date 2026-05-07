@@ -44,10 +44,13 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       env:
         MATCH_PASSWORD: ${{ inputs.match-password }}
-        MATCH_GIT_BASIC_AUTHORIZATION: ${{ inputs.match-git-token }}
+        MATCH_GIT_TOKEN_RAW: ${{ inputs.match-git-token }}
         MATCH_TYPE: ${{ inputs.match-type }}
         BUNDLE_ID: ${{ inputs.bundle-id }}
       run: |
+        # MATCH_GIT_BASIC_AUTHORIZATION = base64("x-access-token:<PAT>")
+        MATCH_GIT_BASIC_AUTHORIZATION=$(printf 'x-access-token:%s' "$MATCH_GIT_TOKEN_RAW" | base64 | tr -d '\n')
+        export MATCH_GIT_BASIC_AUTHORIZATION
         bundle exec fastlane match "$MATCH_TYPE" --readonly --app_identifier "$BUNDLE_ID"
 
     # match가 설치한 manual signing 프로필 이름은 "match {Type} <bundle_id>" 컨벤션 (Type은 capitalize).

@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+## [1.5.4] - 2026-05-07
+
+### Fixed
+- `setup-ios-signing`: `MATCH_GIT_BASIC_AUTHORIZATION`에 raw PAT 대신 `base64("x-access-token:<PAT>")` 사용 — HTTP 400 git clone 오류 수정
+
 ## [1.5.3] - 2026-05-07
 
 ### Fixed
