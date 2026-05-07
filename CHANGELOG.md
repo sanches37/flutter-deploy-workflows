@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-05-07
+
+### Fixed
+- `verify-version`: pubspec 버전의 `+N` 빌드번호를 태그 비교 전에 제거 — 태그 `v1.0.3-dev-ios`와 pubspec `1.0.3+1`이 정상 매치됨
+
 ## [1.5.0] - 2026-05-07
 
 ### Fixed

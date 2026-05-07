@@ -52,13 +52,14 @@ runs:
         GH_REF_NAME: ${{ github.ref_name }}
       run: |
         if [[ "$GH_EVENT" == "push" && "$GH_REF" == refs/tags/* ]]; then
-          # v1.0.0+1-prod-ios → 1.0.0+1
+          # v1.0.3-dev-ios → 1.0.3  (빌드번호 +N 불포함 태그 형식)
           VERSION=$(echo "$GH_REF_NAME" | sed 's/^v//' | sed -E 's/-(prod|dev)-(ios|android|all)$//')
           PUBSPEC_VERSION=$(grep "^version:" pubspec.yaml | sed 's/version: //')
+          PUBSPEC_SEMVER=$(echo "$PUBSPEC_VERSION" | sed 's/+.*//')
           echo "Tag version:     $VERSION"
           echo "Pubspec version: $PUBSPEC_VERSION"
-          if [ "$VERSION" != "$PUBSPEC_VERSION" ]; then
-            echo "::error::Tag version ($VERSION) != pubspec.yaml ($PUBSPEC_VERSION)"
+          if [ "$VERSION" != "$PUBSPEC_SEMVER" ]; then
+            echo "::error::Tag version ($VERSION) != pubspec.yaml semver ($PUBSPEC_SEMVER)"
             exit 1
           fi
         else
