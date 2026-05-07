@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-05-07
+
+### Fixed
+- `ios-dev.yml`, `ios-prod.yml`: reusable workflow에서 composite action 상대 경로(`./.github/actions/xxx`)가 호출 repo 워크스페이스를 참조하는 문제 수정 — `github.workflow_sha`로 flutter-deploy-workflows 자신을 `.gha/`에 체크아웃 후 절대 경로로 참조
+
 ## [1.2.0] - 2026-05-07
 
 ### Changed

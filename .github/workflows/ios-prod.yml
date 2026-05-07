@@ -68,14 +68,21 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Checkout workflow actions
+        uses: actions/checkout@v4
+        with:
+          repository: sanches37/flutter-deploy-workflows
+          ref: ${{ github.workflow_sha }}
+          path: .gha
+
       - name: Verify version (main 강제 + tag↔pubspec match)
         id: version
-        uses: ./.github/actions/verify-version
+        uses: ./.gha/.github/actions/verify-version
         with:
           enforce-main: 'true'
 
       - name: Setup Flutter (+ env decode + build_runner)
-        uses: ./.github/actions/setup-flutter
+        uses: ./.gha/.github/actions/setup-flutter
         with:
           flutter-version: ${{ inputs.flutter_version }}
           env-file-name: '.env.release'
@@ -92,13 +99,13 @@ jobs:
           cd ios && arch -arm64 pod install --repo-update
 
       - name: Setup Ruby (+ private gem auth + bundle)
-        uses: ./.github/actions/setup-ruby
+        uses: ./.gha/.github/actions/setup-ruby
         with:
           working-directory: ios
           gem-token: ${{ secrets.PLUGIN_GIT_TOKEN || secrets.MATCH_GIT_TOKEN }}
 
       - name: Setup iOS signing (match + ExportOptions.plist)
-        uses: ./.github/actions/setup-ios-signing
+        uses: ./.gha/.github/actions/setup-ios-signing
         with:
           bundle-id: ${{ inputs.bundle_id }}
           apple-team-id: ${{ inputs.apple_team_id }}
