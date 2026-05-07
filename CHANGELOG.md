@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+## [1.5.3] - 2026-05-07
+
+### Fixed
+- `ios-dev.yml`, `ios-prod.yml`: env 파일 디코딩을 composite action input에서 workflow 직접 step으로 이동 — composite action `if:` 조건에서 secret 값이 비어있는 것으로 평가되는 GitHub Actions 동작 우회
+
 ## [1.5.2] - 2026-05-07
 
 ### Fixed
