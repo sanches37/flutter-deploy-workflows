@@ -62,7 +62,7 @@ jobs:
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 60
     env:
-      DEPLOY_WF_REF: refs/tags/v1.5.4
+      DEPLOY_WF_REF: refs/tags/v1.5.5
 
     steps:
       - name: Checkout
@@ -140,6 +140,10 @@ jobs:
         env:
           TMPDIR: ${{ runner.temp }}/xcode-prod
           FLAVOR: ${{ inputs.flavor }}
+          FLUTTER_XCODE_CODE_SIGN_STYLE: Manual
+          FLUTTER_XCODE_CODE_SIGN_IDENTITY: Apple Distribution
+          FLUTTER_XCODE_PROVISIONING_PROFILE_SPECIFIER: "match AppStore ${{ inputs.bundle_id }}"
+          FLUTTER_XCODE_DEVELOPMENT_TEAM: ${{ inputs.apple_team_id }}
         run: |
           mkdir -p "$TMPDIR"
           FLAVOR_ARGS=""

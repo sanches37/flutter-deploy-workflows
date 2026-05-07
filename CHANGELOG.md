@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+## [1.5.5] - 2026-05-07
+
+### Fixed
+- `ios-dev.yml`, `ios-prod.yml`: `flutter build ipa` 시 `FLUTTER_XCODE_CODE_SIGN_STYLE=Manual` + `PROVISIONING_PROFILE_SPECIFIER` + `CODE_SIGN_IDENTITY` 주입 — Xcode 자동 서명 시도로 인한 "No Accounts" 오류 수정
+
 ## [1.5.4] - 2026-05-07
 
 ### Fixed
