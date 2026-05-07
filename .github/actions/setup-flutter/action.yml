@@ -65,8 +65,10 @@ runs:
         STUB_FILE: ${{ inputs.env-stub-file }}
         SRC_FILE: ${{ inputs.env-file-name }}
       run: |
-        [ -f "$STUB_FILE" ] || cp "$SRC_FILE" "$STUB_FILE"
-        echo "✅ stub: $STUB_FILE"
+        if [ ! -f "$STUB_FILE" ] && [ -f "$SRC_FILE" ]; then
+          cp "$SRC_FILE" "$STUB_FILE"
+          echo "✅ stub: $STUB_FILE"
+        fi
 
     - name: Generate code (build_runner)
       shell: bash
