@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-05-07
+
+### Changed
+- `ios-dev.yml`, `ios-prod.yml`: `flavor` input 기본값 `''`으로 변경 — 값이 없으면 `--flavor` 인수 없이 빌드 (Flutter flavor 미사용 앱 호환)
+
 ## [1.1.0] - 2026-05-01
 
 ### Added

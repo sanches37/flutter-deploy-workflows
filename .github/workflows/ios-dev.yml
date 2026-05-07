@@ -31,7 +31,8 @@ on:
         default: '3.32.2'
       flavor:
         type: string
-        default: 'dev'
+        default: ''
+        description: 'Flutter flavor (비워두면 --flavor 인수 없이 빌드)'
       runner:
         type: string
         default: 'macos-latest'
@@ -101,9 +102,12 @@ jobs:
       - name: Build IPA
         env:
           TMPDIR: ${{ runner.temp }}/xcode-dev
+          FLAVOR: ${{ inputs.flavor }}
         run: |
           mkdir -p "$TMPDIR"
-          flutter build ipa --release --flavor ${{ inputs.flavor }} --export-options-plist=ios/ExportOptions.plist
+          FLAVOR_ARGS=""
+          [ -n "$FLAVOR" ] && FLAVOR_ARGS="--flavor $FLAVOR"
+          flutter build ipa --release $FLAVOR_ARGS --export-options-plist=ios/ExportOptions.plist
 
       - name: Verify IPA + export path
         run: |
