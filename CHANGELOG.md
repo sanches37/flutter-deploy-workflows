@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-05-07
+
+### Fixed
+- `ios-dev.yml`, `ios-prod.yml`: `github.workflow_sha`가 호출 repo SHA로 해석되는 문제 수정 — `github.workflow_ref`에서 `@` 뒤를 잘라 정확한 ref(예: `refs/tags/v1.4.0`) 추출
+- `setup-flutter` composite action: `env-stub-file` 입력 추가 — dev 빌드에서 `.env.prod` 미존재로 build_runner 실패하는 문제 해결 (파일 없으면 primary env 파일 복사)
+- `ios-dev.yml`: setup-flutter에 `env-stub-file: '.env.prod'` 전달
+- `ios-prod.yml`: `ENV_RELEASE`→`ENV_PROD`, `.env.release`→`.env.prod`로 통일; `env-stub-file: '.env.dev'` 전달
+
 ## [1.3.0] - 2026-05-07
 
 ### Fixed

@@ -62,11 +62,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Extract workflow ref
+        id: wf-ref
+        shell: bash
+        env:
+          GITHUB_WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: echo "ref=${GITHUB_WORKFLOW_REF##*@}" >> "$GITHUB_OUTPUT"
+
       - name: Checkout workflow actions
         uses: actions/checkout@v4
         with:
           repository: sanches37/flutter-deploy-workflows
-          ref: ${{ github.workflow_sha }}
+          ref: ${{ steps.wf-ref.outputs.ref }}
           path: .gha
 
       - name: Verify version (tag↔pubspec, dev는 main 강제 X)
@@ -81,6 +88,7 @@ jobs:
           flutter-version: ${{ inputs.flutter_version }}
           env-file-name: '.env.dev'
           env-file-content: ${{ secrets.ENV_DEV }}
+          env-stub-file: '.env.prod'
 
       - name: Setup CocoaPods
         shell: bash

@@ -52,9 +52,9 @@ on:
       PLUGIN_GIT_TOKEN:
         required: false
         description: 'sanches37/fastlane-plugin-sanches37_deploy private 접근용 PAT. 미설정 시 MATCH_GIT_TOKEN 재사용'
-      ENV_RELEASE:
+      ENV_PROD:
         required: false
-        description: 'base64 인코딩된 .env.release 파일 (선택)'
+        description: 'base64 인코딩된 .env.prod 파일 (선택)'
 
 jobs:
   build-and-deploy:
@@ -68,11 +68,18 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Extract workflow ref
+        id: wf-ref
+        shell: bash
+        env:
+          GITHUB_WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: echo "ref=${GITHUB_WORKFLOW_REF##*@}" >> "$GITHUB_OUTPUT"
+
       - name: Checkout workflow actions
         uses: actions/checkout@v4
         with:
           repository: sanches37/flutter-deploy-workflows
-          ref: ${{ github.workflow_sha }}
+          ref: ${{ steps.wf-ref.outputs.ref }}
           path: .gha
 
       - name: Verify version (main 강제 + tag↔pubspec match)
@@ -85,8 +92,9 @@ jobs:
         uses: ./.gha/.github/actions/setup-flutter
         with:
           flutter-version: ${{ inputs.flutter_version }}
-          env-file-name: '.env.release'
-          env-file-content: ${{ secrets.ENV_RELEASE }}
+          env-file-name: '.env.prod'
+          env-file-content: ${{ secrets.ENV_PROD }}
+          env-stub-file: '.env.dev'
 
       - name: "Setup CocoaPods (베달판 보존: 깨졌으면 reinstall)"
         shell: bash

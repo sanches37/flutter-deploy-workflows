@@ -22,11 +22,15 @@ inputs:
     required: false
     default: 'stable'
   env-file-name:
-    description: '디코딩 후 저장할 .env 파일명 (예: .env.release). 비어있으면 디코딩 스킵.'
+    description: '디코딩 후 저장할 .env 파일명 (예: .env.dev). 비어있으면 디코딩 스킵.'
     required: false
     default: ''
   env-file-content:
     description: 'base64 인코딩된 .env 파일 내용 (secrets에서 전달)'
+    required: false
+    default: ''
+  env-stub-file:
+    description: 'build_runner용 stub .env 파일명. 설정 시 해당 파일이 없으면 env-file-name을 복사해 생성.'
     required: false
     default: ''
 
@@ -53,6 +57,16 @@ runs:
       run: |
         echo "$ENV_FILE_CONTENT" | base64 --decode > "$ENV_FILE_NAME"
         echo "✅ $ENV_FILE_NAME decoded"
+
+    - name: Create env stub for build_runner (optional)
+      if: inputs.env-stub-file != '' && inputs.env-file-name != ''
+      shell: bash
+      env:
+        STUB_FILE: ${{ inputs.env-stub-file }}
+        SRC_FILE: ${{ inputs.env-file-name }}
+      run: |
+        [ -f "$STUB_FILE" ] || cp "$SRC_FILE" "$STUB_FILE"
+        echo "✅ stub: $STUB_FILE"
 
     - name: Generate code (build_runner)
       shell: bash
