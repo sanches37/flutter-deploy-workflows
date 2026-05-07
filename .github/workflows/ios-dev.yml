@@ -6,13 +6,13 @@
 #       tags: ['v*-dev-ios']
 #   jobs:
 #     deploy:
-#       uses: sanches37/flutter-deploy-workflows/.github/workflows/ios-dev.yml@v1
+#       uses: sanches37/flutter-deploy-workflows/.github/workflows/ios-dev.yml@v1.5.0
 #       with:
 #         bundle_id_dev: com.lifeadmin.app.dev
 #         apple_team_id: <Apple Team ID>
 #       secrets: inherit
 #
-# v1.1.0: composite으로 추출.
+# v1.5.0: DEPLOY_WF_REF 하드코딩 — github.workflow_ref가 caller ref를 반환하는 문제 우회.
 
 name: iOS Dev (TestFlight Internal)
 
@@ -57,23 +57,18 @@ jobs:
     name: Build & Upload to TestFlight Internal
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 60
+    env:
+      DEPLOY_WF_REF: refs/tags/v1.5.0
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Extract workflow ref
-        id: wf-ref
-        shell: bash
-        env:
-          GITHUB_WORKFLOW_REF: ${{ github.workflow_ref }}
-        run: echo "ref=${GITHUB_WORKFLOW_REF##*@}" >> "$GITHUB_OUTPUT"
-
       - name: Checkout workflow actions
         uses: actions/checkout@v4
         with:
           repository: sanches37/flutter-deploy-workflows
-          ref: ${{ steps.wf-ref.outputs.ref }}
+          ref: ${{ env.DEPLOY_WF_REF }}
           path: .gha
 
       - name: Verify version (tag↔pubspec, dev는 main 강제 X)

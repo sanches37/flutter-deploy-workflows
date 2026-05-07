@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-05-07
+
+### Fixed
+- `ios-dev.yml`, `ios-prod.yml`: `github.workflow_ref`도 호출 repo ref를 반환하는 문제 최종 수정 — `DEPLOY_WF_REF: refs/tags/v1.5.0` 하드코딩으로 대체. 신규 릴리즈 시 이 값만 갱신.
+
 ## [1.4.0] - 2026-05-07
 
 ### Fixed

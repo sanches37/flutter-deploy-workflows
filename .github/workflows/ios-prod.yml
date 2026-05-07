@@ -6,13 +6,13 @@
 #       tags: ['v*-prod-ios']
 #   jobs:
 #     deploy:
-#       uses: sanches37/flutter-deploy-workflows/.github/workflows/ios-prod.yml@v1
+#       uses: sanches37/flutter-deploy-workflows/.github/workflows/ios-prod.yml@v1.5.0
 #       with:
 #         bundle_id: com.lifeadmin.app
 #         apple_team_id: <Apple Team ID>
 #       secrets: inherit
 #
-# v1.1.0: 4개 composite (setup-flutter, setup-ruby, setup-ios-signing, verify-version)로 추출.
+# v1.5.0: DEPLOY_WF_REF 하드코딩 — github.workflow_ref가 caller ref를 반환하는 문제 우회.
 
 name: iOS Prod (App Store)
 
@@ -61,6 +61,8 @@ jobs:
     name: Build & Submit to App Store
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 60
+    env:
+      DEPLOY_WF_REF: refs/tags/v1.5.0
 
     steps:
       - name: Checkout
@@ -68,18 +70,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Extract workflow ref
-        id: wf-ref
-        shell: bash
-        env:
-          GITHUB_WORKFLOW_REF: ${{ github.workflow_ref }}
-        run: echo "ref=${GITHUB_WORKFLOW_REF##*@}" >> "$GITHUB_OUTPUT"
-
       - name: Checkout workflow actions
         uses: actions/checkout@v4
         with:
           repository: sanches37/flutter-deploy-workflows
-          ref: ${{ steps.wf-ref.outputs.ref }}
+          ref: ${{ env.DEPLOY_WF_REF }}
           path: .gha
 
       - name: Verify version (main 강제 + tag↔pubspec match)
