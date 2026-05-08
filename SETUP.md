@@ -228,7 +228,7 @@ on:
 
 jobs:
   deploy:
-    uses: sanches37/flutter-deploy-workflows/.github/workflows/ios-dev.yml@v1.6.2
+    uses: sanches37/flutter-deploy-workflows/.github/workflows/ios-dev.yml@v1.7.0
     with:
       bundle_id_dev: com.yourapp
       apple_team_id: ${{ vars.APPLE_TEAM_ID }}
@@ -248,7 +248,7 @@ on:
 
 jobs:
   deploy:
-    uses: sanches37/flutter-deploy-workflows/.github/workflows/ios-prod.yml@v1.6.2
+    uses: sanches37/flutter-deploy-workflows/.github/workflows/ios-prod.yml@v1.7.0
     with:
       bundle_id: com.yourapp
       apple_team_id: ${{ vars.APPLE_TEAM_ID }}
@@ -375,6 +375,7 @@ git push origin v1.0.0-prod-ios
 | `No 'main' method found` | `flutter build ipa` 타겟이 `lib/main.dart`인데 `main()` 없음 | Fastfile `build_flutter_args`로 `--target lib/main_dev.dart` 명시 |
 | `No profile for team matching 'match AppStore com.x' found` | match가 timestamp suffix 붙인 프로파일 이름과 ExportOptions.plist 불일치 | plugin v0.2.1+ 사용 (`MATCH_PROVISIONING_PROFILE_MAPPING` 우선 읽기) |
 | `flutterfire: command not found` → `ARCHIVE FAILED` | `firebase_crashlytics` 사용 시 Xcode 빌드 단계가 FlutterFire CLI 호출. CI에 미설치 | `flutter-deploy-workflows v1.6.3+` 사용 시 자동 처리 |
+| `SDK version issue. built with iOS 18.5 SDK` → 업로드 거부 | Apple App Store Connect가 iOS 26 SDK(Xcode 26+) 빌드만 허용. `macos-latest` 러너 기본 Xcode가 16.4로 고정됨 | `flutter-deploy-workflows v1.7.0+` 사용 시 자동 처리 (`latest-stable` Xcode 선택) |
 | `BUNDLED WITH` 버전 오류 | `ios/Gemfile.lock` 커밋 시 Ruby 3.2+ 충돌 | `Gemfile.lock` 삭제 + `.gitignore` 추가 |
 | `api_key_path` 파일 없음 오류 | CI에 `.api_key.json` 없는데 Matchfile에 조건 없음 | `api_key_path(_api_key_path) if File.exist?(_api_key_path)` 로 조건부 처리 |
 | match 복호화 실패 | `force_legacy_encryption` 설정 불일치 | Matchfile에 `force_legacy_encryption(true)` 추가 |
@@ -387,6 +388,7 @@ git push origin v1.0.0-prod-ios
 
 | flutter-deploy-workflows | fastlane-plugin-sanches37_deploy | Flutter |
 |---|---|---|
-| v1.6.2 | v0.2.1 | >= 3.32.0 |
+| v1.7.0 | v0.2.1 | >= 3.32.0 |
+| v1.6.2 ~ v1.6.3 | v0.2.1 | >= 3.32.0 |
 | v1.6.0 ~ v1.6.1 | v0.2.0 | >= 3.32.0 |
 | v1.0.0 ~ v1.1.0 | v0.1.x | >= 3.32.0 |

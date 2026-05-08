@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-05-08
+
+### Added
+- `ios-dev.yml`, `ios-prod.yml`: `Select Xcode` 단계 추가 — `maxim-lobanov/setup-xcode@v1`로 `latest-stable`(Xcode 26.x) 선택. Apple App Store Connect가 iOS 26 SDK(Xcode 26+)로 빌드된 앱만 허용함에 따라 기본값인 Xcode 16.4로는 업로드 시 "SDK version issue" 오류 발생
+
 ## [1.6.3] - 2026-05-08
 
 ### Fixed

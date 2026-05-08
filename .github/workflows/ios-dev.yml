@@ -60,11 +60,16 @@ jobs:
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 60
     env:
-      DEPLOY_WF_REF: refs/tags/v1.6.3
+      DEPLOY_WF_REF: refs/tags/v1.7.0
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Select Xcode (iOS 26 SDK — App Store Connect 요구사항)
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: 'latest-stable'
 
       - name: Checkout workflow actions
         uses: actions/checkout@v4
