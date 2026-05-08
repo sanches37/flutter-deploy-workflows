@@ -31,11 +31,11 @@ on:
 
 jobs:
   deploy:
-    uses: sanches37/flutter-deploy-workflows/.github/workflows/ios-prod.yml@v1.1.0
+    uses: sanches37/flutter-deploy-workflows/.github/workflows/ios-prod.yml@v1.6.2
     with:
       bundle_id: com.yourapp
-      apple_team_id: YOUR_TEAM_ID
-      flutter_version: '3.32.2'
+      apple_team_id: ${{ vars.APPLE_TEAM_ID }}
+      flutter_version: '3.41.7'
     secrets: inherit
 ```
 
@@ -48,14 +48,18 @@ on:
 
 jobs:
   deploy:
-    uses: sanches37/flutter-deploy-workflows/.github/workflows/android-dev.yml@v1.1.0
+    uses: sanches37/flutter-deploy-workflows/.github/workflows/android-dev.yml@v1.6.2
     with:
       package_name_dev: com.yourapp.dev
       firebase_app_id: "1:xxx:android:xxx"
       tester_groups: test
-      flutter_version: '3.32.2'
+      flutter_version: '3.41.7'
     secrets: inherit
 ```
+
+## 신규 프로젝트 초기 설정
+
+→ [SETUP.md](./SETUP.md) 참조
 
 ## 디자인 원칙
 
@@ -68,4 +72,6 @@ jobs:
 
 | workflow 버전 | plugin 버전 | Flutter |
 |---|---|---|
+| v1.6.2 | v0.2.1 | >= 3.32.0 |
+| v1.6.0 ~ v1.6.1 | v0.2.0 | >= 3.32.0 |
 | v1.0.0 ~ v1.1.0 | v0.1.x | >= 3.32.0 |
