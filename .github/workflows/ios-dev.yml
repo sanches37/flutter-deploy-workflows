@@ -60,7 +60,7 @@ jobs:
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 60
     env:
-      DEPLOY_WF_REF: refs/tags/v1.6.1
+      DEPLOY_WF_REF: refs/tags/v1.6.2
 
     steps:
       - name: Checkout
@@ -104,12 +104,10 @@ jobs:
       - name: Setup CocoaPods (Setup Ruby 이후 — 동일 Ruby 환경)
         shell: bash
         run: |
-          # setup-ruby가 PATH를 바꾼 뒤 pod가 다른 Ruby로 실행될 수 있음.
-          # pod --version 실패 시 현재 활성 Ruby로 cocoapods 재설치.
-          if ! pod --version &> /dev/null 2>&1; then
-            gem install cocoapods --no-document
-          fi
-          cd ios && arch -arm64 pod install --repo-update
+          # cocoapods는 ios/Gemfile에 선언돼 bundle install로 함께 설치됨.
+          # bundle exec pod install → bundle exec fastlane(ios_sign_and_build) 안에서도
+          # 동일 GEM_HOME을 공유하므로 CocoaPods broken 오류 없음.
+          cd ios && arch -arm64 bundle exec pod install --repo-update
 
       - name: Fastlane — 빌드 + 서명 + TestFlight Internal 업로드
         working-directory: ios

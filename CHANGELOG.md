@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+## [1.6.2] - 2026-05-08
+
+### Fixed
+- `ios-dev.yml`, `ios-prod.yml`: `Setup CocoaPods` 단계를 `bundle exec pod install`로 변경 — `ruby/setup-ruby`가 `bundle config set --local path ios/vendor/bundle`을 설정해 `bundle exec fastlane` 실행 시 `GEM_HOME`이 bundle 경로로 제한됨. `cocoapods`가 `ios/Gemfile`에 없으면 `pod`가 gem을 찾지 못해 "CocoaPods is installed but broken" 오류 발생. 호출 앱 `ios/Gemfile`에 `gem "cocoapods"` 추가 필요 (sanches37_deploy v0.2.0+ 레인 사용 시)
+
 ## [1.6.1] - 2026-05-08
 
 ### Fixed
