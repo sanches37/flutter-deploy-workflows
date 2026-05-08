@@ -1,22 +1,23 @@
-# iOS 서명 셋업 — fastlane match readonly + ExportOptions.plist 생성
+# iOS 서명 셋업 — setup_ci + fastlane match readonly + ExportOptions.plist + Manual Signing 설정
 #
 # 호출 예:
-#   - uses: ./.github/actions/setup-ios-signing
+#   - uses: ./.gha/.github/actions/setup-ios-signing
 #     with:
-#       bundle-id: com.lifeadmin.app
+#       bundle-id: com.example.app
 #       apple-team-id: ABCDE12345
 #       match-password: ${{ secrets.MATCH_PASSWORD }}
 #       match-git-token: ${{ secrets.MATCH_GIT_TOKEN }}
+#       project-file: ios/Runner.xcodeproj/project.pbxproj
 #
 # 전제: 호출 전에 setup-ruby composite 실행 완료 (bundle exec fastlane 가능 상태).
-# match-type 기본 'appstore' — TestFlight Internal/AppStore 둘 다 동일 프로필 사용.
+# setup_ci → match → ExportOptions.plist → project.pbxproj 순서 보장.
 
 name: 'Setup iOS Signing'
-description: 'fastlane match readonly + ExportOptions.plist 생성'
+description: 'setup_ci + fastlane match readonly + ExportOptions.plist + Manual Signing 설정'
 
 inputs:
   bundle-id:
-    description: 'Bundle Identifier (예: com.lifeadmin.app)'
+    description: 'Bundle Identifier (예: com.example.app)'
     required: true
   apple-team-id:
     description: 'Apple Developer Team ID'
@@ -35,10 +36,24 @@ inputs:
     description: 'fastlane 실행 디렉토리 (보통 ios)'
     required: false
     default: 'ios'
+  project-file:
+    description: >
+      Xcode project.pbxproj 경로 (워크스페이스 루트 기준, 예: ios/Runner.xcodeproj/project.pbxproj).
+      설정 시 CODE_SIGN_STYLE → Manual + PROVISIONING_PROFILE_SPECIFIER 자동 주입.
+      생략 시 project.pbxproj 수정 스킵.
+    required: false
+    default: ''
 
 runs:
   using: 'composite'
   steps:
+    # CI 환경에서 임시 키체인 생성 — match가 설치한 인증서/프로파일을
+    # xcodebuild(flutter build ipa)가 접근할 수 있도록 보장.
+    - name: Create temporary keychain (fastlane setup_ci)
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: bundle exec fastlane run setup_ci
+
     - name: Match — Install Apple Distribution certificate + provisioning profile
       shell: bash
       working-directory: ${{ inputs.working-directory }}
@@ -48,34 +63,43 @@ runs:
         MATCH_TYPE: ${{ inputs.match-type }}
         BUNDLE_ID: ${{ inputs.bundle-id }}
       run: |
-        # MATCH_GIT_BASIC_AUTHORIZATION = base64("x-access-token:<PAT>")
         MATCH_GIT_BASIC_AUTHORIZATION=$(printf 'x-access-token:%s' "$MATCH_GIT_TOKEN_RAW" | base64 | tr -d '\n')
         export MATCH_GIT_BASIC_AUTHORIZATION
         bundle exec fastlane match "$MATCH_TYPE" --readonly --app_identifier "$BUNDLE_ID"
 
-        # fastlane match는 프로필 이름에 timestamp를 붙이는 경우가 있음
-        # (예: "match AppStore com.lifeadmin.mobile 1778134700").
-        # 설치된 실제 프로필 이름을 추출해서 이후 단계에서 사용.
-        PROFILE_DIR="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+        # 설치된 프로파일 이름 추출 — Xcode 버전에 따라 저장 경로가 다름.
+        # Xcode 15 이하: ~/Library/MobileDevice/Provisioning Profiles
+        # Xcode 16+:     ~/Library/Developer/Xcode/UserData/Provisioning Profiles
         MATCH_PROFILE_NAME=""
-        for p in "$PROFILE_DIR"/*.mobileprovision; do
-          [ -f "$p" ] || continue
-          c=$(security cms -D -i "$p" 2>/dev/null) || continue
-          echo "$c" | grep -q "$BUNDLE_ID" || continue
-          MATCH_PROFILE_NAME=$(echo "$c" | grep -A1 '<key>Name</key>' | grep '<string>' | sed 's/.*<string>\(.*\)<\/string>/\1/')
-          break
+        for PROFILE_DIR in \
+          "$HOME/Library/MobileDevice/Provisioning Profiles" \
+          "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"; do
+          [ -d "$PROFILE_DIR" ] || continue
+          for p in "$PROFILE_DIR"/*.mobileprovision; do
+            [ -f "$p" ] || continue
+            c=$(security cms -D -i "$p" 2>/dev/null) || continue
+            echo "$c" | grep -q "$BUNDLE_ID" || continue
+            # Distribution 인증서용 프로파일만 선택 (appstore/adhoc)
+            if echo "$c" | grep -qE 'ProvisionsAllDevices|get-task-allow'; then
+              continue
+            fi
+            NAME=$(echo "$c" | grep -A1 '<key>Name</key>' | grep '<string>' | sed 's/.*<string>\(.*\)<\/string>/\1/')
+            if [ -n "$NAME" ]; then
+              MATCH_PROFILE_NAME="$NAME"
+              echo "✅ Profile found in: $PROFILE_DIR"
+              break 2
+            fi
+          done
         done
+
         if [ -n "$MATCH_PROFILE_NAME" ]; then
           echo "MATCH_PROFILE_NAME=$MATCH_PROFILE_NAME" >> "$GITHUB_ENV"
           echo "✅ Profile name: $MATCH_PROFILE_NAME"
         else
-          echo "::warning::Could not extract profile name for $BUNDLE_ID; will use constructed fallback"
+          echo "::warning::Could not extract profile name for $BUNDLE_ID — using constructed fallback"
         fi
 
-    # match가 설치한 manual signing 프로필 이름은 "match {Type} <bundle_id>" 컨벤션 (Type은 capitalize).
-    # ExportOptions.plist를 명시 안 하면 flutter build ipa가 signingStyle: automatic으로 폴백 →
-    # match 프로필을 못 찾아 "No signing identity matches profile" 실패.
-    - name: Generate ExportOptions.plist (match 프로필 명시)
+    - name: Generate ExportOptions.plist
       shell: bash
       env:
         MATCH_TYPE: ${{ inputs.match-type }}
@@ -83,14 +107,12 @@ runs:
         APPLE_TEAM_ID: ${{ inputs.apple-team-id }}
       run: |
         case "$MATCH_TYPE" in
-          appstore)     PROFILE_TYPE="AppStore" ;;
-          development)  PROFILE_TYPE="Development" ;;
-          adhoc)        PROFILE_TYPE="AdHoc" ;;
-          enterprise)   PROFILE_TYPE="InHouse" ;;
-          *)            echo "::error::Unknown match-type: $MATCH_TYPE"; exit 1 ;;
+          appstore)    PROFILE_TYPE="AppStore" ;;
+          development) PROFILE_TYPE="Development" ;;
+          adhoc)       PROFILE_TYPE="AdHoc" ;;
+          enterprise)  PROFILE_TYPE="InHouse" ;;
+          *)           echo "::error::Unknown match-type: $MATCH_TYPE"; exit 1 ;;
         esac
-        # MATCH_PROFILE_NAME은 Match 단계에서 $GITHUB_ENV로 export된 실제 설치 이름.
-        # 못 가져왔으면 컨벤션 기반 이름으로 폴백.
         PROFILE_NAME="${MATCH_PROFILE_NAME:-match ${PROFILE_TYPE} ${BUNDLE_ID}}"
 
         cat > ios/ExportOptions.plist <<PLIST
@@ -113,3 +135,34 @@ runs:
         </plist>
         PLIST
         echo "✅ ExportOptions.plist generated (profile: $PROFILE_NAME)"
+
+    # project.pbxproj 수정 — Automatic → Manual Signing + PROVISIONING_PROFILE_SPECIFIER 주입.
+    # project-file 입력이 없으면 스킵 (하위 호환).
+    - name: Set Manual Signing in project.pbxproj
+      if: inputs.project-file != ''
+      shell: bash
+      env:
+        PROJECT_FILE: ${{ inputs.project-file }}
+        BUNDLE_ID: ${{ inputs.bundle-id }}
+      run: |
+        PROFILE_NAME="${MATCH_PROFILE_NAME:-match AppStore ${BUNDLE_ID}}"
+
+        perl -pi -e 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' "$PROJECT_FILE"
+        perl -pi -e 's/"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "iPhone Developer";/"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution";/g' "$PROJECT_FILE"
+
+        BUNDLE_ID="$BUNDLE_ID" PROFILE_NAME="$PROFILE_NAME" ruby << 'RUBY_EOF'
+        file_path = ENV['PROJECT_FILE']
+        profile_name = ENV['PROFILE_NAME']
+        bundle_id = ENV['BUNDLE_ID']
+        content = File.read(file_path)
+        unless content.include?('PROVISIONING_PROFILE_SPECIFIER')
+          content = content.gsub(/(PRODUCT_BUNDLE_IDENTIFIER = #{Regexp.escape(bundle_id)};)/) do |match|
+            "#{match}\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"#{profile_name}\";"
+          end
+          File.write(file_path, content)
+          puts "✅ PROVISIONING_PROFILE_SPECIFIER = #{profile_name}"
+        else
+          puts "ℹ️  PROVISIONING_PROFILE_SPECIFIER already set — skipping"
+        end
+        RUBY_EOF
+        echo "✅ Manual signing configured"

@@ -115,7 +115,7 @@ jobs:
           working-directory: ios
           gem-token: ${{ secrets.PLUGIN_GIT_TOKEN || secrets.MATCH_GIT_TOKEN }}
 
-      - name: Setup iOS signing (match + ExportOptions.plist)
+      - name: Setup iOS signing (setup_ci + match + ExportOptions.plist + Manual Signing)
         uses: ./.gha/.github/actions/setup-ios-signing
         with:
           bundle-id: ${{ inputs.bundle_id }}
@@ -124,34 +124,7 @@ jobs:
           match-git-token: ${{ secrets.MATCH_GIT_TOKEN }}
           match-type: appstore
           working-directory: ios
-
-      - name: Set Manual Signing in project.pbxproj
-        shell: bash
-        env:
-          BUNDLE_ID: ${{ inputs.bundle_id }}
-        run: |
-          PROJECT_FILE="ios/Runner.xcodeproj/project.pbxproj"
-          # MATCH_PROFILE_NAME: setup-ios-signing에서 $GITHUB_ENV로 export된 실제 설치 이름
-          # (예: "match AppStore com.lifeadmin.mobile 1778134700"). 없으면 폴백.
-          PROFILE_NAME="${MATCH_PROFILE_NAME:-match AppStore ${BUNDLE_ID}}"
-
-          perl -pi -e 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' "$PROJECT_FILE"
-          perl -pi -e 's/"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "iPhone Developer";/"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution";/g' "$PROJECT_FILE"
-
-          BUNDLE_ID="$BUNDLE_ID" PROFILE_NAME="$PROFILE_NAME" ruby << 'RUBY_EOF'
-          file_path = "ios/Runner.xcodeproj/project.pbxproj"
-          profile_name = ENV['PROFILE_NAME']
-          bundle_id = ENV['BUNDLE_ID']
-          content = File.read(file_path)
-          unless content.include?('PROVISIONING_PROFILE_SPECIFIER')
-            content = content.gsub(/(PRODUCT_BUNDLE_IDENTIFIER = #{Regexp.escape(bundle_id)};)/) do |match|
-              "#{match}\n\t\t\t\tPROVISIONING_PROFILE_SPECIFIER = \"#{profile_name}\";"
-            end
-            File.write(file_path, content)
-            puts "✅ PROVISIONING_PROFILE_SPECIFIER = #{profile_name}"
-          end
-          RUBY_EOF
-          echo "✅ Manual signing configured"
+          project-file: ios/Runner.xcodeproj/project.pbxproj
 
       - name: Clean build artifacts
         shell: bash
