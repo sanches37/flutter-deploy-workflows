@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+## [1.6.3] - 2026-05-08
+
+### Fixed
+- `ios-dev.yml`, `ios-prod.yml`: `Install FlutterFire CLI` 단계 추가 — `firebase_crashlytics`가 `pubspec.yaml`에 선언된 경우 `dart pub global activate flutterfire_cli` 실행. Xcode 빌드 단계(`flutterfire upload-crashlytics-symbols`)가 CI 러너에서 `flutterfire: command not found`로 `ARCHIVE FAILED` 오류 수정
+
 ## [1.6.2] - 2026-05-08
 
 ### Fixed

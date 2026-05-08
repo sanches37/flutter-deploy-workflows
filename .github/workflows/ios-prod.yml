@@ -64,7 +64,7 @@ jobs:
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 60
     env:
-      DEPLOY_WF_REF: refs/tags/v1.6.2
+      DEPLOY_WF_REF: refs/tags/v1.6.3
 
     steps:
       - name: Checkout
@@ -114,6 +114,19 @@ jobs:
           # cocoapods는 ios/Gemfile에 선언돼 bundle install로 함께 설치됨.
           echo "✅ CocoaPods version: $(bundle exec pod --version)"
           cd ios && arch -arm64 bundle exec pod install --repo-update
+
+      - name: Install FlutterFire CLI (firebase_crashlytics 선언 시)
+        shell: bash
+        run: |
+          # firebase_crashlytics Xcode 빌드 단계가 flutterfire CLI를 호출함.
+          # CI 러너에 없으면 "flutterfire: command not found" 로 ARCHIVE FAILED.
+          if grep -q "firebase_crashlytics" pubspec.yaml; then
+            dart pub global activate flutterfire_cli
+            echo "$HOME/.pub-cache/bin" >> "$GITHUB_PATH"
+            echo "✅ flutterfire_cli 설치 완료"
+          else
+            echo "firebase_crashlytics 미사용 — flutterfire_cli 스킵"
+          fi
 
       - name: Fastlane — 빌드 + 서명 + TestFlight + 심사 제출
         working-directory: ios

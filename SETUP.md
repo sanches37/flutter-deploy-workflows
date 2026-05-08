@@ -374,6 +374,7 @@ git push origin v1.0.0-prod-ios
 | `CocoaPods is installed but broken` | `ios/Gemfile`에 `gem "cocoapods"` 없음 | Gemfile에 추가 |
 | `No 'main' method found` | `flutter build ipa` 타겟이 `lib/main.dart`인데 `main()` 없음 | Fastfile `build_flutter_args`로 `--target lib/main_dev.dart` 명시 |
 | `No profile for team matching 'match AppStore com.x' found` | match가 timestamp suffix 붙인 프로파일 이름과 ExportOptions.plist 불일치 | plugin v0.2.1+ 사용 (`MATCH_PROVISIONING_PROFILE_MAPPING` 우선 읽기) |
+| `flutterfire: command not found` → `ARCHIVE FAILED` | `firebase_crashlytics` 사용 시 Xcode 빌드 단계가 FlutterFire CLI 호출. CI에 미설치 | `flutter-deploy-workflows v1.6.3+` 사용 시 자동 처리 |
 | `BUNDLED WITH` 버전 오류 | `ios/Gemfile.lock` 커밋 시 Ruby 3.2+ 충돌 | `Gemfile.lock` 삭제 + `.gitignore` 추가 |
 | `api_key_path` 파일 없음 오류 | CI에 `.api_key.json` 없는데 Matchfile에 조건 없음 | `api_key_path(_api_key_path) if File.exist?(_api_key_path)` 로 조건부 처리 |
 | match 복호화 실패 | `force_legacy_encryption` 설정 불일치 | Matchfile에 `force_legacy_encryption(true)` 추가 |
