@@ -6,26 +6,28 @@
 #       tags: ['v*-dev-ios']
 #   jobs:
 #     deploy:
-#       uses: sanches37/flutter-deploy-workflows/.github/workflows/ios-dev.yml@v1.5.0
+#       uses: sanches37/flutter-deploy-workflows/.github/workflows/ios-dev.yml@v1.6.0
 #       with:
-#         bundle_id_dev: com.lifeadmin.app.dev
 #         apple_team_id: <Apple Team ID>
+#         flutter_version: '3.41.7'
 #       secrets: inherit
 #
-# v1.5.0: DEPLOY_WF_REF 하드코딩 — github.workflow_ref가 caller ref를 반환하는 문제 우회.
+# v1.6.0: ios_sign_and_build 통합 — setup_ci + match + build + 업로드가 단일 fastlane 레인으로 통합.
+#         Fastfile에 dev_build_and_release 레인 필요 (sanches37_deploy v0.2.0+).
 
 name: iOS Dev (TestFlight Internal)
 
 on:
   workflow_call:
     inputs:
-      bundle_id_dev:
-        type: string
-        required: true
-        description: 'Dev Bundle ID (예: com.lifeadmin.app.dev)'
       apple_team_id:
         type: string
         required: true
+      bundle_id_dev:
+        type: string
+        required: false
+        default: ''
+        description: '표시용 Bundle ID (Fastfile에서 실제 값 관리)'
       flutter_version:
         type: string
         default: '3.32.2'
@@ -58,7 +60,7 @@ jobs:
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 60
     env:
-      DEPLOY_WF_REF: refs/tags/v1.5.7
+      DEPLOY_WF_REF: refs/tags/v1.6.0
 
     steps:
       - name: Checkout
@@ -107,42 +109,20 @@ jobs:
           working-directory: ios
           gem-token: ${{ secrets.PLUGIN_GIT_TOKEN || secrets.MATCH_GIT_TOKEN }}
 
-      - name: Setup iOS signing (setup_ci + match + ExportOptions.plist + Manual Signing)
-        uses: ./.gha/.github/actions/setup-ios-signing
-        with:
-          bundle-id: ${{ inputs.bundle_id_dev }}
-          apple-team-id: ${{ inputs.apple_team_id }}
-          match-password: ${{ secrets.MATCH_PASSWORD }}
-          match-git-token: ${{ secrets.MATCH_GIT_TOKEN }}
-          match-type: appstore
-          working-directory: ios
-          project-file: ios/Runner.xcodeproj/project.pbxproj
-
-      - name: Build IPA
-        env:
-          TMPDIR: ${{ runner.temp }}/xcode-dev
-          FLAVOR: ${{ inputs.flavor }}
-        run: |
-          mkdir -p "$TMPDIR"
-          FLAVOR_ARGS=""
-          [ -n "$FLAVOR" ] && FLAVOR_ARGS="--flavor $FLAVOR"
-          flutter build ipa --release $FLAVOR_ARGS --export-options-plist=ios/ExportOptions.plist
-
-      - name: Verify IPA + export path
-        run: |
-          IPA_FILE=$(find build/ios/ipa -name "*.ipa" | head -1)
-          [ -f "$IPA_FILE" ] || { echo "::error::IPA not found"; exit 1; }
-          IPA_PATH="$GITHUB_WORKSPACE/$IPA_FILE"
-          echo "IPA_PATH=$IPA_PATH" >> "$GITHUB_ENV"
-
-      - name: Fastlane — TestFlight Internal 업로드
+      - name: Fastlane — 빌드 + 서명 + TestFlight Internal 업로드
         working-directory: ios
         env:
+          APPLE_TEAM_ID: ${{ inputs.apple_team_id }}
+          MATCH_GIT_TOKEN: ${{ secrets.MATCH_GIT_TOKEN }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
-          IPA_PATH: ${{ env.IPA_PATH }}
-        run: bundle exec fastlane dev_release
+          FLUTTER_ARGS: ${{ inputs.flavor != '' && format('--flavor {0}', inputs.flavor) || '' }}
+          TMPDIR: ${{ runner.temp }}/xcode-dev
+        run: |
+          mkdir -p "$TMPDIR"
+          bundle exec fastlane dev_build_and_release
 
       - name: Summary
         run: |

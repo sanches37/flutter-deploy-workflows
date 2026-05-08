@@ -1,32 +1,34 @@
 # iOS Prod 배포 (App Store) - reusable workflow
 #
-# 호출 측 예시 (life_admin/.github/workflows/deploy-ios-prod.yml):
+# 호출 측 예시:
 #   on:
 #     push:
 #       tags: ['v*-prod-ios']
 #   jobs:
 #     deploy:
-#       uses: sanches37/flutter-deploy-workflows/.github/workflows/ios-prod.yml@v1.5.0
+#       uses: sanches37/flutter-deploy-workflows/.github/workflows/ios-prod.yml@v1.6.0
 #       with:
-#         bundle_id: com.lifeadmin.app
 #         apple_team_id: <Apple Team ID>
+#         flutter_version: '3.41.7'
 #       secrets: inherit
 #
-# v1.5.0: DEPLOY_WF_REF 하드코딩 — github.workflow_ref가 caller ref를 반환하는 문제 우회.
+# v1.6.0: ios_sign_and_build 통합 — setup_ci + match + build + 심사제출이 단일 fastlane 레인으로 통합.
+#         Fastfile에 prod_build_and_submit 레인 필요 (sanches37_deploy v0.2.0+).
 
 name: iOS Prod (App Store)
 
 on:
   workflow_call:
     inputs:
-      bundle_id:
-        type: string
-        required: true
-        description: 'Prod Bundle ID (예: com.lifeadmin.app)'
       apple_team_id:
         type: string
         required: true
         description: 'Apple Developer Team ID'
+      bundle_id:
+        type: string
+        required: false
+        default: ''
+        description: '표시용 Bundle ID (Fastfile에서 실제 값 관리)'
       flutter_version:
         type: string
         default: '3.32.2'
@@ -62,7 +64,7 @@ jobs:
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 60
     env:
-      DEPLOY_WF_REF: refs/tags/v1.5.7
+      DEPLOY_WF_REF: refs/tags/v1.6.0
 
     steps:
       - name: Checkout
@@ -115,59 +117,20 @@ jobs:
           working-directory: ios
           gem-token: ${{ secrets.PLUGIN_GIT_TOKEN || secrets.MATCH_GIT_TOKEN }}
 
-      - name: Setup iOS signing (setup_ci + match + ExportOptions.plist + Manual Signing)
-        uses: ./.gha/.github/actions/setup-ios-signing
-        with:
-          bundle-id: ${{ inputs.bundle_id }}
-          apple-team-id: ${{ inputs.apple_team_id }}
-          match-password: ${{ secrets.MATCH_PASSWORD }}
-          match-git-token: ${{ secrets.MATCH_GIT_TOKEN }}
-          match-type: appstore
-          working-directory: ios
-          project-file: ios/Runner.xcodeproj/project.pbxproj
-
-      - name: Clean build artifacts
-        shell: bash
-        run: |
-          rm -rf build/ios || true
-          rm -rf ios/build || true
-          rm -rf ~/Library/Developer/Xcode/DerivedData/* 2>/dev/null || true
-          rm -rf /var/folders/*/*/XcodeDistPipeline* 2>/dev/null || true
-          flutter clean
-          flutter pub get
-          cd ios && arch -arm64 pod install
-
-      - name: Build IPA (TMPDIR 격리로 codesign 충돌 방지)
-        env:
-          TMPDIR: ${{ runner.temp }}/xcode-prod
-          FLAVOR: ${{ inputs.flavor }}
-        run: |
-          mkdir -p "$TMPDIR"
-          FLAVOR_ARGS=""
-          [ -n "$FLAVOR" ] && FLAVOR_ARGS="--flavor $FLAVOR"
-          flutter build ipa --release $FLAVOR_ARGS --export-options-plist=ios/ExportOptions.plist
-
-      - name: Verify IPA + export absolute path
-        run: |
-          IPA_FILE=$(find build/ios/ipa -name "*.ipa" | head -1)
-          if [ ! -f "$IPA_FILE" ]; then
-            echo "::error::IPA not found"
-            ls -la build/ios/ipa/ 2>/dev/null || true
-            exit 1
-          fi
-          IPA_PATH="$GITHUB_WORKSPACE/$IPA_FILE"
-          echo "✅ IPA: $IPA_PATH ($(du -h "$IPA_FILE" | cut -f1))"
-          echo "IPA_PATH=$IPA_PATH" >> "$GITHUB_ENV"
-
-      - name: Fastlane — TestFlight + 심사 제출 (sanches37_deploy plugin)
+      - name: Fastlane — 빌드 + 서명 + TestFlight + 심사 제출
         working-directory: ios
         env:
+          APPLE_TEAM_ID: ${{ inputs.apple_team_id }}
+          MATCH_GIT_TOKEN: ${{ secrets.MATCH_GIT_TOKEN }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
-          IPA_PATH: ${{ env.IPA_PATH }}
-          APP_VERSION: ${{ steps.version.outputs.version }}
-        run: bundle exec fastlane prod_release_and_submit
+          FLUTTER_ARGS: ${{ inputs.flavor != '' && format('--flavor {0}', inputs.flavor) || '' }}
+          TMPDIR: ${{ runner.temp }}/xcode-prod
+        run: |
+          mkdir -p "$TMPDIR"
+          bundle exec fastlane prod_build_and_submit
 
       - name: Deployment summary
         run: |
