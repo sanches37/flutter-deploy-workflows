@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-05-08
+
+### Fixed
+- `ios-dev.yml`, `ios-prod.yml`: `Setup CocoaPods` 단계를 `Setup Ruby` **이후**로 이동 — setup-ruby가 PATH를 바꾼 후 기존 Ruby로 설치된 pod가 버전 불일치로 깨지는 문제 수정
+- `ios-dev.yml`, `ios-prod.yml`: `pod --version` 실패 시 homebrew 대신 `gem install cocoapods` 사용 — 현재 활성 Ruby(3.3.x)에 cocoapods 재설치
+
 ## [1.5.7] - 2026-05-07
 
 ### Fixed

@@ -60,7 +60,7 @@ jobs:
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 60
     env:
-      DEPLOY_WF_REF: refs/tags/v1.6.0
+      DEPLOY_WF_REF: refs/tags/v1.6.1
 
     steps:
       - name: Checkout
@@ -95,19 +95,21 @@ jobs:
         with:
           flutter-version: ${{ inputs.flutter_version }}
 
-      - name: Setup CocoaPods
-        shell: bash
-        run: |
-          if ! pod --version &> /dev/null; then
-            arch -arm64 brew reinstall cocoapods || arch -arm64 brew install cocoapods
-          fi
-          cd ios && arch -arm64 pod install --repo-update
-
       - name: Setup Ruby (+ private gem auth + bundle)
         uses: ./.gha/.github/actions/setup-ruby
         with:
           working-directory: ios
           gem-token: ${{ secrets.PLUGIN_GIT_TOKEN || secrets.MATCH_GIT_TOKEN }}
+
+      - name: Setup CocoaPods (Setup Ruby 이후 — 동일 Ruby 환경)
+        shell: bash
+        run: |
+          # setup-ruby가 PATH를 바꾼 뒤 pod가 다른 Ruby로 실행될 수 있음.
+          # pod --version 실패 시 현재 활성 Ruby로 cocoapods 재설치.
+          if ! pod --version &> /dev/null 2>&1; then
+            gem install cocoapods --no-document
+          fi
+          cd ios && arch -arm64 pod install --repo-update
 
       - name: Fastlane — 빌드 + 서명 + TestFlight Internal 업로드
         working-directory: ios
