@@ -384,6 +384,13 @@ git tag v1.0.0-dev-ios
 git push origin v1.0.0-dev-ios
 # → TestFlight Internal Testing 업로드 → 내부 테스트 후
 
+# 3. prod 태그 전 빌드번호만 증가 (버전은 동일하게 유지)
+#    pubspec.yaml: version: 1.0.0+1 → 1.0.0+2
+#    이유: Apple은 같은 version+build 조합 중복 허용 안 함.
+#    dev(+1)가 이미 업로드된 상태에서 prod(+1)를 올리면 거부됨.
+git add pubspec.yaml
+git commit -m "chore: 빌드번호 증가 (1.0.0+1 → 1.0.0+2)"
+git push origin main
 git tag v1.0.0-prod-ios
 git push origin v1.0.0-prod-ios
 # → App Store 심사 제출
