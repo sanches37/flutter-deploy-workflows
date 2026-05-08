@@ -62,12 +62,26 @@ Future<void> main() async {
 }
 ```
 
+### Firebase 프로젝트 분리 (필수)
+
+**dev와 prod는 반드시 별도의 Firebase 프로젝트를 사용해야 한다.**
+
+하나의 Firebase 프로젝트를 공유하면 FCM 토큰 풀이 합쳐지므로,  
+dev에서 알림을 테스트할 때 prod 실사용자에게 전달될 수 있다.
+
+- [ ] Firebase Console에서 프로젝트 2개 생성: `your-app-dev`, `your-app`
+- [ ] 각 프로젝트에서 Android 앱 + iOS 앱 등록 (Bundle ID / Package Name 동일해도 무방)
+- [ ] `google-services.json` (Android) / `GoogleService-Info.plist` (iOS) 각각 발급
+- [ ] dev용 config → `.env.dev`, prod용 config → `.env.prod`에 분리 저장
+
+> Firebase 프로젝트가 분리되면 FCM 토큰, Analytics, Crashlytics 모두 자동으로 격리된다.
+
 ### 환경변수 파일
 
 ```
 .env.example    ← 커밋 O (CI 복사 기준, 실제 값 없음)
-.env.dev        ← 커밋 X (gitignore)
-.env.prod       ← 커밋 X (gitignore)
+.env.dev        ← 커밋 X (gitignore) — dev Firebase 프로젝트 config
+.env.prod       ← 커밋 X (gitignore) — prod Firebase 프로젝트 config
 ```
 
 `.env.example` 내용 (프로젝트에 필요한 모든 키를 빈 값으로):
