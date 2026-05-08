@@ -27,23 +27,21 @@
 
 - [ ] App Store Connect → My Apps → `+` → Bundle ID 등록 (`com.yourapp`)
 - [ ] Xcode 또는 Apple Developer 포털에서 App ID 등록 (Bundle ID 일치 확인)
-- [ ] App 등록 후 최초 `fastlane match` 실행 (인증서·프로파일 생성 + match-certificates 레포에 push):
 
-```bash
-cd ios
-bundle exec fastlane match appstore --readonly false
-```
-
-> 이후 CI는 항상 `--readonly true`로만 읽는다. 인증서 갱신 필요 시에만 로컬에서 재실행.
+> fastlane match 실행은 **3단계(fastlane 파일 설정) 완료 후** 진행한다.
 
 ---
 
 ## 2단계 — Flutter 프로젝트 구조
 
-### 진입점 파일 (필수)
+### 진입점 파일
 
-`lib/main.dart`에 `main()`을 두지 않고, dev/prod 각각의 진입점 파일을 만든다.  
-`flutter build ipa --target`으로 진입점을 명시하기 때문에 이 구조가 없으면 빌드 실패.
+**패턴 A — 표준 (`lib/main.dart`에 `main()` 있음)**  
+대부분의 Flutter 프로젝트. Fastfile에서 `--target` 없이 빌드한다. 추가 작업 불필요.
+
+**패턴 B — 분리 진입점 (`lib/main.dart`에 `main()` 없음)**  
+dev/prod 환경 설정을 진입점에서 분기하는 경우. 이 구조라면 아래처럼 파일을 만들고,  
+Fastfile에서 `build_flutter_args`로 `--target`을 명시해야 한다 (3단계 Fastfile 참고).
 
 ```dart
 // lib/main.dart — main() 없음. 공통 초기화 헬퍼만.
@@ -140,6 +138,8 @@ force_legacy_encryption(true)
 
 ### `ios/fastlane/Fastfile`
 
+**패턴 A** — `lib/main.dart`에 `main()`이 있는 표준 구조:
+
 ```ruby
 default_platform(:ios)
 
@@ -159,28 +159,18 @@ def app_version
   line[1].strip.split("+").first
 end
 
-# FLUTTER_ARGS(flavor 등)에 --target을 추가
-def build_flutter_args(target)
-  base = ENV.fetch('FLUTTER_ARGS', '')
-  [base, "--target lib/#{target}"].reject(&:empty?).join(' ')
-end
-
 platform :ios do
-  # ── CI 통합 레인 (빌드 + 서명 + 업로드) ─────────────────────────────────
-
   desc "Dev: 빌드 + TestFlight Internal Testing 업로드 (CI용)"
   lane :dev_build_and_release do
-    ipa = ios_sign_and_build(**SIGN_BUILD_COMMON, flutter_args: build_flutter_args('main_dev.dart'))
+    ipa = ios_sign_and_build(**SIGN_BUILD_COMMON)
     ios_dev_release(bundle_id: BUNDLE_ID, ipa_path: ipa)
   end
 
   desc "Prod: 빌드 + App Store 메타데이터 + 심사 제출 (CI용)"
   lane :prod_build_and_submit do
-    ipa = ios_sign_and_build(**SIGN_BUILD_COMMON, flutter_args: build_flutter_args('main_prod.dart'))
+    ipa = ios_sign_and_build(**SIGN_BUILD_COMMON)
     ios_prod_release_and_submit(bundle_id: BUNDLE_ID, ipa_path: ipa, app_version: app_version)
   end
-
-  # ── 업로드 전용 레인 (로컬에서 빌드된 IPA 재사용) ──────────────────────
 
   desc "TestFlight Internal Testing 업로드 (심사 제출 없음)"
   lane :dev_release do
@@ -199,6 +189,28 @@ platform :ios do
 end
 ```
 
+**패턴 B** — 분리 진입점 구조 (`lib/main_dev.dart` / `lib/main_prod.dart`):  
+`SIGN_BUILD_COMMON`은 동일, 레인에서 `build_flutter_args`로 `--target`을 전달한다.
+
+```ruby
+# build_flutter_args 메서드 추가 (SIGN_BUILD_COMMON 아래)
+def build_flutter_args(target)
+  base = ENV.fetch('FLUTTER_ARGS', '')
+  [base, "--target lib/#{target}"].reject(&:empty?).join(' ')
+end
+
+# 레인만 아래처럼 변경
+lane :dev_build_and_release do
+  ipa = ios_sign_and_build(**SIGN_BUILD_COMMON, flutter_args: build_flutter_args('main_dev.dart'))
+  ios_dev_release(bundle_id: BUNDLE_ID, ipa_path: ipa)
+end
+
+lane :prod_build_and_submit do
+  ipa = ios_sign_and_build(**SIGN_BUILD_COMMON, flutter_args: build_flutter_args('main_prod.dart'))
+  ios_prod_release_and_submit(bundle_id: BUNDLE_ID, ipa_path: ipa, app_version: app_version)
+end
+```
+
 ### `ios/fastlane/.api_key.json` (로컬 전용, gitignore)
 
 ```json
@@ -211,6 +223,18 @@ end
 ```
 
 > CI는 이 파일 없이 `ASC_KEY_ID` / `ASC_ISSUER_ID` / `ASC_PRIVATE_KEY` 환경변수를 직접 읽는다.
+
+### 최초 match 실행 (인증서·프로파일 생성)
+
+fastlane 파일 설정이 완료된 후 로컬에서 1회 실행한다.  
+인증서와 프로비저닝 프로파일을 생성해 `match-certificates` 레포에 push한다.
+
+```bash
+cd ios
+bundle exec fastlane match appstore --readonly false
+```
+
+> 이후 CI는 항상 `--readonly true`로만 읽는다. 인증서 갱신 필요 시에만 로컬에서 재실행.
 
 ---
 
