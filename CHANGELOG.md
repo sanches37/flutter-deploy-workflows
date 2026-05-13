@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-05-13
+
+### Fixed
+- `android-dev.yml`: `.gha` checkout 추가 + composite action 경로 `./.github/...` → `./.gha/.github/...` 수정 — reusable workflow에서 caller 레포 경로로 composite action을 찾아 "Can't find action" 오류 수정
+- `android-dev.yml`: 릴리즈 키스토어 조건부 단계를 `if:` 대신 run 내부 조건으로 변경 — 시크릿은 `env:` 블록 평가 전 `if:` 조건에서 접근 불가해 항상 스킵되던 버그 수정
+
+### Added
+- `android-dev.yml`: `target` input 추가 — 분리 진입점(`lib/main_dev.dart` 등) Flutter 프로젝트 지원
+- `android-dev.yml`: `--split-per-abi` 기본 적용 — arm64-v8a APK 우선 선택으로 APK 크기 최적화
+- `android-dev.yml`: Fastlane 단계에 `FIREBASE_APP_ID`, `TESTER_GROUPS` env 추가 — `dev_release` 레인에서 동적으로 참조 가능
+
 ## [1.7.0] - 2026-05-08
 
 ### Added

@@ -6,13 +6,17 @@
 #       tags: ['v*-dev-android']
 #   jobs:
 #     deploy:
-#       uses: sanches37/flutter-deploy-workflows/.github/workflows/android-dev.yml@v1
+#       uses: sanches37/flutter-deploy-workflows/.github/workflows/android-dev.yml@v1.8.0
 #       with:
-#         package_name_dev: com.lifeadmin.app.dev
-#         firebase_app_id: 1:1234:android:abcd
-#       secrets: inherit
+#         package_name_dev: com.example.app.dev
+#         firebase_app_id: '1:12345:android:abcd'
+#         flutter_version: '3.41.7'
+#         target: lib/main_dev.dart
+#       secrets:
+#         FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON_DEV }}
+#         ENV_DEV: ${{ secrets.ENV_DEV }}
 #
-# v1.1.0: composite으로 추출.
+# v1.8.0: .gha checkout 추가 + composite 경로 수정 + target input + split-per-abi + keystore 조건 수정
 
 name: Android Dev (Firebase App Distribution)
 
@@ -25,7 +29,7 @@ on:
       firebase_app_id:
         type: string
         required: true
-        description: 'dev 전용 Firebase 프로젝트의 Android App ID. prod Firebase 프로젝트와 반드시 분리할 것 (FCM 토큰 풀 격리)'
+        description: 'dev 앱 Firebase App ID (예: 1:12345:android:abcd). 비민감 식별자.'
       tester_groups:
         type: string
         default: 'test'
@@ -38,6 +42,10 @@ on:
       flavor:
         type: string
         default: 'dev'
+      target:
+        type: string
+        default: ''
+        description: 'Flutter 진입점 (예: lib/main_dev.dart). 비어있으면 --target 없이 빌드.'
       runner:
         type: string
         default: 'ubuntu-latest'
@@ -64,14 +72,23 @@ jobs:
     name: Build APK & Upload to Firebase
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 30
+    env:
+      DEPLOY_WF_REF: refs/tags/v1.8.0
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Checkout workflow actions
+        uses: actions/checkout@v4
+        with:
+          repository: sanches37/flutter-deploy-workflows
+          ref: ${{ env.DEPLOY_WF_REF }}
+          path: .gha
+
       - name: Verify version (dev는 main 강제 X)
         id: version
-        uses: ./.github/actions/verify-version
+        uses: ./.gha/.github/actions/verify-version
         with:
           enforce-main: 'false'
 
@@ -82,25 +99,33 @@ jobs:
           java-version: ${{ inputs.java_version }}
 
       - name: Setup Flutter (+ env decode + build_runner)
-        uses: ./.github/actions/setup-flutter
+        uses: ./.gha/.github/actions/setup-flutter
         with:
           flutter-version: ${{ inputs.flutter_version }}
           env-file-name: '.env.dev'
           env-file-content: ${{ secrets.ENV_DEV }}
+          env-stub-file: '.env.prod'
 
-      - name: Decode release keystore (optional, dev에서도 release 빌드 시)
-        if: env.RELEASE_KEYSTORE_BASE64 != ''
+      - name: Decode release keystore (optional)
         env:
           KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "⏭ RELEASE_KEYSTORE_BASE64 없음 — 디버그 서명으로 빌드"
+            exit 0
+          fi
           mkdir -p android/app/keystore
           echo "$KEYSTORE_BASE64" | base64 --decode > android/app/keystore/release.jks
           cat > android/key.properties <<PROPS
           storeFile=keystore/release.jks
-          storePassword=${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
-          keyAlias=${{ secrets.RELEASE_KEY_ALIAS }}
-          keyPassword=${{ secrets.RELEASE_KEY_PASSWORD }}
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
           PROPS
+          echo "✅ 릴리즈 키스토어 설정 완료"
 
       - name: Decode Firebase service account JSON
         env:
@@ -111,17 +136,21 @@ jobs:
           echo "FIREBASE_SERVICE_ACCOUNT_PATH=$FIREBASE_SA_PATH" >> "$GITHUB_ENV"
 
       - name: Build APK
-        run: flutter build apk --release --flavor ${{ inputs.flavor }}
+        run: |
+          flutter build apk --release --flavor ${{ inputs.flavor }} \
+            ${{ inputs.target != '' && format('--target {0}', inputs.target) || '' }} \
+            --split-per-abi
 
       - name: Verify APK + export path
         run: |
-          APK_FILE=$(find build/app/outputs/flutter-apk -name "*.apk" | head -1)
+          APK_FILE=$(find build/app/outputs/flutter-apk -name "*arm64-v8a*.apk" | head -1)
+          [ -f "$APK_FILE" ] || APK_FILE=$(find build/app/outputs/flutter-apk -name "*.apk" | head -1)
           [ -f "$APK_FILE" ] || { echo "::error::APK not found"; ls -R build/app/outputs/flutter-apk 2>/dev/null || true; exit 1; }
-          APK_PATH="$GITHUB_WORKSPACE/$APK_FILE"
-          echo "APK_PATH=$APK_PATH" >> "$GITHUB_ENV"
+          echo "APK_PATH=$(pwd)/$APK_FILE" >> "$GITHUB_ENV"
+          echo "📦 APK: $APK_FILE ($(du -h "$APK_FILE" | cut -f1))"
 
-      - name: Setup Ruby (+ private gem auth + bundle)
-        uses: ./.github/actions/setup-ruby
+      - name: Setup Ruby (+ bundle install)
+        uses: ./.gha/.github/actions/setup-ruby
         with:
           working-directory: android
           gem-token: ${{ secrets.PLUGIN_GIT_TOKEN || secrets.MATCH_GIT_TOKEN }}
@@ -130,13 +159,16 @@ jobs:
         working-directory: android
         env:
           FIREBASE_SERVICE_ACCOUNT_PATH: ${{ env.FIREBASE_SERVICE_ACCOUNT_PATH }}
+          FIREBASE_APP_ID: ${{ inputs.firebase_app_id }}
           APK_PATH: ${{ env.APK_PATH }}
+          TESTER_GROUPS: ${{ inputs.tester_groups }}
           RELEASE_NOTES: "tag: ${{ github.ref_name }} (${{ steps.version.outputs.version }})"
         run: bundle exec fastlane dev_release
 
       - name: Summary
         run: |
           echo "✅ Firebase App Distribution 배포 완료"
+          echo "Package:         ${{ inputs.package_name_dev }}"
           echo "Firebase App ID: ${{ inputs.firebase_app_id }}"
           echo "Tester Groups:   ${{ inputs.tester_groups }}"
           echo "Version:         ${{ steps.version.outputs.version }}"
