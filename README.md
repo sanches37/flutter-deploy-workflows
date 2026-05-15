@@ -31,7 +31,7 @@ on:
 
 jobs:
   deploy:
-    uses: sanches37/flutter-deploy-workflows/.github/workflows/ios-prod.yml@v1.6.2
+    uses: sanches37/flutter-deploy-workflows/.github/workflows/ios-prod.yml@v1.8.1
     with:
       bundle_id: com.yourapp
       apple_team_id: ${{ vars.APPLE_TEAM_ID }}
@@ -48,7 +48,7 @@ on:
 
 jobs:
   deploy:
-    uses: sanches37/flutter-deploy-workflows/.github/workflows/android-dev.yml@v1.6.2
+    uses: sanches37/flutter-deploy-workflows/.github/workflows/android-dev.yml@v1.8.1
     with:
       package_name_dev: com.yourapp.dev
       firebase_app_id: "1:xxx:android:xxx"
@@ -72,6 +72,9 @@ jobs:
 
 | workflow 버전 | plugin 버전 | Flutter |
 |---|---|---|
-| v1.6.2 | v0.2.1 | >= 3.32.0 |
+| v1.8.1 | v0.2.1 | >= 3.32.0 |
+| v1.8.0 | v0.2.1 | >= 3.32.0 |
+| v1.7.0 | v0.2.1 | >= 3.32.0 |
+| v1.6.2 ~ v1.6.3 | v0.2.1 | >= 3.32.0 |
 | v1.6.0 ~ v1.6.1 | v0.2.0 | >= 3.32.0 |
 | v1.0.0 ~ v1.1.0 | v0.1.x | >= 3.32.0 |

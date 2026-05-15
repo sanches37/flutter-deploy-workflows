@@ -6,12 +6,12 @@
 #       tags: ['v*-prod-android']
 #   jobs:
 #     deploy:
-#       uses: sanches37/flutter-deploy-workflows/.github/workflows/android-prod.yml@v1
+#       uses: sanches37/flutter-deploy-workflows/.github/workflows/android-prod.yml@v1.8.1
 #       with:
-#         package_name: com.lifeadmin.app
+#         package_name: com.example.app
 #       secrets: inherit
 #
-# v1.1.0: composite으로 추출.
+# v1.8.1: .gha checkout 추가 + composite 경로 수정 (android-dev.yml v1.8.0 패턴 평행 적용)
 
 name: Android Prod (Play Store)
 
@@ -60,6 +60,8 @@ jobs:
     name: Build AAB & Upload to Play Store
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 45
+    env:
+      DEPLOY_WF_REF: refs/tags/v1.8.1
 
     steps:
       - name: Checkout
@@ -67,9 +69,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Checkout workflow actions
+        uses: actions/checkout@v4
+        with:
+          repository: sanches37/flutter-deploy-workflows
+          ref: ${{ env.DEPLOY_WF_REF }}
+          path: .gha
+
       - name: Verify version (main 강제 + tag↔pubspec match)
         id: version
-        uses: ./.github/actions/verify-version
+        uses: ./.gha/.github/actions/verify-version
         with:
           enforce-main: 'true'
 
@@ -80,7 +89,7 @@ jobs:
           java-version: ${{ inputs.java_version }}
 
       - name: Setup Flutter (+ env decode + build_runner)
-        uses: ./.github/actions/setup-flutter
+        uses: ./.gha/.github/actions/setup-flutter
         with:
           flutter-version: ${{ inputs.flutter_version }}
           env-file-name: '.env.release'
@@ -145,7 +154,7 @@ jobs:
           echo "📦 AAB: $AAB_PATH ($(du -h "$AAB_FILE" | cut -f1))"
 
       - name: Setup Ruby (+ private gem auth + bundle)
-        uses: ./.github/actions/setup-ruby
+        uses: ./.gha/.github/actions/setup-ruby
         with:
           working-directory: android
           gem-token: ${{ secrets.PLUGIN_GIT_TOKEN || secrets.MATCH_GIT_TOKEN }}

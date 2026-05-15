@@ -363,7 +363,7 @@ on:
 
 jobs:
   deploy:
-    uses: sanches37/flutter-deploy-workflows/.github/workflows/android-dev.yml@v1.8.0
+    uses: sanches37/flutter-deploy-workflows/.github/workflows/android-dev.yml@v1.8.1
     with:
       package_name_dev: com.yourapp.dev
       firebase_app_id: '1:000000000000:android:placeholder'  # Firebase Console에서 확인
@@ -645,7 +645,7 @@ jobs:
 | match 복호화 실패 | `force_legacy_encryption` 설정 불일치 | Matchfile에 `force_legacy_encryption(true)` 추가 |
 | prod 태그 push 후 `main 브랜치에서만` 오류 | feature 브랜치에서 prod 태그 push | main 병합 후 태그 |
 | `Environment variable not found for field` (build_runner) | `.env.example`이 없거나 필드 누락 | `.env.example`에 필요한 모든 키 추가 |
-| `Can't find action './.github/actions/...'` (Android dev 배포) | reusable workflow의 composite action 상대 경로가 caller 레포 워크스페이스로 해석. `.gha` checkout 누락 + 경로 미수정 | `flutter-deploy-workflows v1.8.0+` 사용 시 자동 처리 |
+| `Can't find action './.github/actions/...'` (Android dev/prod 배포) | reusable workflow의 composite action 상대 경로가 caller 레포 워크스페이스로 해석. `.gha` checkout 누락 + 경로 미수정 | dev: `v1.8.0+`, prod: `v1.8.1+` 사용 시 자동 처리 |
 | Android dev 배포 시 릴리즈 키스토어 단계가 항상 스킵됨 (`RELEASE_KEYSTORE_BASE64` 설정해도) | `if:` 조건에서 secret 값이 빈 문자열로 평가됨 (GitHub Actions가 `if:` 평가 시점에 secret 미접근) | `flutter-deploy-workflows v1.8.0+` 사용 시 자동 처리 (run 내부에서 조건 분기) |
 
 ---
@@ -654,6 +654,7 @@ jobs:
 
 | flutter-deploy-workflows | fastlane-plugin-sanches37_deploy | Flutter |
 |---|---|---|
+| v1.8.1 | v0.2.1 | >= 3.32.0 |
 | v1.8.0 | v0.2.1 | >= 3.32.0 |
 | v1.7.0 | v0.2.1 | >= 3.32.0 |
 | v1.6.2 ~ v1.6.3 | v0.2.1 | >= 3.32.0 |

@@ -73,7 +73,7 @@ jobs:
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 30
     env:
-      DEPLOY_WF_REF: refs/tags/v1.8.0
+      DEPLOY_WF_REF: refs/tags/v1.8.1
 
     steps:
       - name: Checkout

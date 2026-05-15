@@ -4,11 +4,20 @@
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-05-15
+
+### Fixed
+- `android-prod.yml`: `.gha` checkout 추가 + composite action 경로 `./.github/...` → `./.gha/.github/...` 수정 — `android-dev.yml` v1.8.0과 동일한 "Can't find action" 버그가 prod에 잔존하던 것을 평행 적용. 키스토어 `if:` 시크릿 평가 버그는 prod에 해당 없음(키스토어 secret이 `required: true`로 의무화).
+
+### Changed
+- 모든 워크플로우(`ios-dev.yml`, `ios-prod.yml`, `android-dev.yml`, `android-prod.yml`)의 `DEPLOY_WF_REF`를 `refs/tags/v1.8.1`로 동기화 — v1.5.0 정책("신규 릴리즈 시 이 값만 갱신") 일관성 회복.
+
 ### Docs
-- `SETUP.md`: Android 자동배포 가이드 추가 — `3-B. Android fastlane 파일` 섹션(Gemfile / Pluginfile / Fastfile), 4단계 `deploy-android-dev.yml` thin caller 예시, 5단계 Secrets Android 섹션, 6단계 `.gitignore` Android 항목, 8단계 Android 태그 형식·배포 순서
+- `README.md`: 호출 예시 ref `@v1.6.2` → `@v1.8.1` 갱신, 호환성 테이블에 v1.7.0 / v1.8.0 / v1.8.1 행 추가 (v1.7.0~v1.8.0 발행 시 누락된 룰 보정)
+- `SETUP.md`: Android 자동배포 가이드 추가 — `3-B. Android fastlane 파일` 섹션(Gemfile / Pluginfile / Fastfile), 4단계 `deploy-android-dev.yml` thin caller 예시(`@v1.8.1`), 5단계 Secrets Android 섹션, 6단계 `.gitignore` Android 항목, 8단계 Android 태그 형식·배포 순서
 - `SETUP.md`: 9단계 — CI (선택) 신규 — `flutter analyze` + `very_good test` 템플릿, envied 사용/미사용 분기 명시
-- `SETUP.md`: Known Issues 테이블에 v1.8.0 Android 버그픽스 2건 행 추가 (`.gha` checkout 누락 / 릴리즈 키스토어 단계 항상 스킵)
-- `SETUP.md`: 버전 호환성 표에 v1.8.0 행 추가
+- `SETUP.md`: Known Issues 테이블에 v1.8.0/v1.8.1 Android 버그픽스 행 추가 (`.gha` checkout 누락 / 릴리즈 키스토어 단계 항상 스킵)
+- `SETUP.md`: 버전 호환성 표에 v1.8.0 / v1.8.1 행 추가
 
 ## [1.8.0] - 2026-05-13
 
