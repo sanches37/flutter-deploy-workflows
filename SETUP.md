@@ -252,6 +252,63 @@ bundle exec fastlane match appstore --readonly false
 
 ---
 
+## 3-B. Android fastlane 파일
+
+iOS와 동일하게 `android/` 디렉토리에 fastlane 설정을 둔다. Android는 Firebase App Distribution 플러그인 하나만 사용하므로 iOS보다 단순하다.
+
+### `android/Gemfile`
+
+```ruby
+source "https://rubygems.org"
+
+gem "fastlane"
+
+plugins_path = File.join(File.dirname(__FILE__), "fastlane", "Pluginfile")
+eval_gemfile(plugins_path) if File.exist?(plugins_path)
+```
+
+> Android는 iOS와 달리 `cocoapods` 의존성 없음. 기본 `fastlane`만 명시.
+
+### `android/fastlane/Pluginfile`
+
+```ruby
+gem "fastlane-plugin-firebase_app_distribution"
+```
+
+> 이 플러그인은 Firebase 인증을 service account JSON으로 처리하므로, iOS의 `fastlane-plugin-sanches37_deploy`와 달리 별도 PAT가 필요 없다.
+
+### `android/fastlane/Fastfile`
+
+```ruby
+default_platform(:android)
+
+platform :android do
+  desc "Firebase App Distribution dev 배포"
+  lane :dev_release do
+    firebase_app_distribution(
+      app: ENV.fetch("FIREBASE_APP_ID"),
+      android_artifact_type: "APK",
+      android_artifact_path: ENV.fetch("APK_PATH"),
+      service_credentials_file: ENV.fetch("FIREBASE_SERVICE_ACCOUNT_PATH"),
+      release_notes: ENV.fetch("RELEASE_NOTES", "dev build")
+    )
+  end
+end
+```
+
+> `FIREBASE_APP_ID`, `APK_PATH`, `FIREBASE_SERVICE_ACCOUNT_PATH`, `RELEASE_NOTES` 환경변수는 `android-dev.yml`이 자동으로 주입한다. Fastfile에 패키지명 / 앱 ID를 하드코딩하지 않아도 됨.
+
+### Firebase App ID 확인
+
+Firebase Console → 프로젝트 설정 → 일반 → Android 앱 → "앱 ID"  
+형식: `1:000000000000:android:abcd...` — 비민감 식별자이므로 GitHub Actions caller에 평문으로 박는다 (secret 아님).
+
+### Firebase service account JSON 발급
+
+Firebase Console → 프로젝트 설정 → 서비스 계정 → "새 비공개 키 생성" → 다운로드한 JSON 파일 전체를 `FIREBASE_SERVICE_ACCOUNT_JSON_DEV` secret에 그대로 붙여넣는다 (개행 포함, base64 인코딩 X).
+
+---
+
 ## 4단계 — GitHub Actions 워크플로우
 
 ### `.github/workflows/deploy-ios-dev.yml`
@@ -294,6 +351,33 @@ jobs:
     secrets: inherit
 ```
 
+### `.github/workflows/deploy-android-dev.yml`
+
+```yaml
+name: Android Dev Deploy (Firebase)
+
+on:
+  push:
+    tags:
+      - 'v*-dev-android'
+
+jobs:
+  deploy:
+    uses: sanches37/flutter-deploy-workflows/.github/workflows/android-dev.yml@v1.8.0
+    with:
+      package_name_dev: com.yourapp.dev
+      firebase_app_id: '1:000000000000:android:placeholder'  # Firebase Console에서 확인
+      flutter_version: '3.41.7'
+      target: lib/main_dev.dart   # 패턴 A(표준 main.dart)면 생략
+    secrets:
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON_DEV }}
+      ENV_DEV: ${{ secrets.ENV_DEV }}
+```
+
+> Android는 iOS와 달리 `secrets: inherit`을 쓰지 않고 명시적으로 매핑한다. dev/prod Firebase 프로젝트 secret 이름이 분리되기 때문(`*_DEV` / `*_PROD`).
+
+> v1.8.0 미만 버전은 `.gha` checkout 누락 + 키스토어 단계 `if:` 시크릿 평가 버그로 Android 배포 실패. v1.8.0 이상 필수.
+
 ---
 
 ## 5단계 — GitHub Secrets / Variables 등록
@@ -317,6 +401,23 @@ GitHub 레포 → Settings → Secrets and variables → Actions
 |--------|------|
 | `PLUGIN_GIT_TOKEN` | 플러그인 레포가 별도 계정이라면 별도 PAT. 미설정 시 `MATCH_GIT_TOKEN` 재사용 |
 | `ENV_PROD` | base64 인코딩된 `.env.prod` 파일 내용 (prod 배포 시 필요) |
+
+### Secrets (Android, 필수)
+
+| Secret | 설명 |
+|--------|------|
+| `FIREBASE_SERVICE_ACCOUNT_JSON_DEV` | Firebase 서비스 계정 JSON 파일 전체 (dev 프로젝트). caller에서 `FIREBASE_SERVICE_ACCOUNT_JSON` 시크릿에 매핑 |
+
+### Secrets (Android, 선택 — 릴리즈 키스토어 사용 시)
+
+| Secret | 설명 |
+|--------|------|
+| `RELEASE_KEYSTORE_BASE64` | `release.jks`를 base64 인코딩한 문자열. 미설정 시 디버그 서명으로 빌드 |
+| `RELEASE_KEYSTORE_PASSWORD` | 키스토어 비밀번호 |
+| `RELEASE_KEY_ALIAS` | 키 alias |
+| `RELEASE_KEY_PASSWORD` | 키 비밀번호 |
+
+> Android 4개 키스토어 secret은 모두 같이 설정하거나 모두 미설정. 일부만 설정하면 빌드는 되지만 서명이 의도와 다를 수 있음.
 
 ### Variables (필수)
 
@@ -351,12 +452,18 @@ ios/fastlane/.api_key.json
 
 # Bundler local install (CI에서 ruby/setup-ruby가 여기에 설치)
 ios/vendor/
+android/vendor/
 
 # envied 생성 파일 (실제 키 포함)
 lib/core/config/env_*.g.dart
 
 # Gemfile.lock — BUNDLED WITH 버전이 Ruby 3.2+ 환경에서 충돌 유발
 ios/Gemfile.lock
+android/Gemfile.lock
+
+# Android 릴리즈 키스토어 (CI에서 RELEASE_KEYSTORE_BASE64로부터 decode)
+android/app/keystore/
+android/key.properties
 ```
 
 ---
@@ -379,17 +486,19 @@ bundle exec fastlane deliver init
 
 ### 태그 형식
 
-```
-v{semver}-dev-ios    # TestFlight Internal Testing
-v{semver}-prod-ios   # App Store 심사 제출
-```
+| 태그 | 워크플로우 | 대상 |
+|------|-----------|------|
+| `v{semver}-dev-ios` | `ios-dev.yml` | TestFlight Internal Testing |
+| `v{semver}-prod-ios` | `ios-prod.yml` | App Store 심사 제출 |
+| `v{semver}-dev-android` | `android-dev.yml` | Firebase App Distribution |
+| `v{semver}-prod-android` | `android-prod.yml` | Play Store production track |
 
 - `pubspec.yaml`의 `version: 1.0.0+3`에서 semver 부분(`1.0.0`)만 사용한다.  
   빌드번호(`+3`)는 태그에 포함하지 않는다.
 - **prod 태그는 반드시 `main` 브랜치에서 생성해야 한다.**  
   다른 브랜치에서 prod 태그를 push하면 `verify-version` 단계에서 차단.
 
-### 배포 순서 예시 (v1.0.0 첫 배포)
+### 배포 순서 예시 — iOS (v1.0.0 첫 배포)
 
 ```bash
 # 1. pubspec.yaml version 확인: 1.0.0+1
@@ -410,6 +519,113 @@ git push origin v1.0.0-prod-ios
 # → App Store 심사 제출
 ```
 
+### 배포 순서 예시 — Android (v1.0.0 dev 배포)
+
+```bash
+# 1. pubspec.yaml version 확인: 1.0.0+1
+# 2. main 브랜치 또는 feature 브랜치에서 태그 생성 (dev는 main 강제 X)
+git tag v1.0.0-dev-android
+git push origin v1.0.0-dev-android
+# → Firebase App Distribution 테스터 그룹에 APK 배포
+```
+
+> Android dev는 Firebase App Distribution이라 Apple과 달리 빌드번호 중복 제약이 없다. dev → prod 사이 빌드번호 증가는 불필요.
+
+---
+
+## 9단계 — CI (선택)
+
+PR / `main` push 시 `flutter analyze` + `very_good test`를 돌려 회귀를 막는다. 자동배포 워크플로우(1~8단계)는 태그 push 시점에만 도므로, CI 없이는 분석·테스트 회귀를 PR 단계에서 잡을 수 없다.
+
+### `.github/workflows/ci.yml`
+
+```yaml
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze-and-test:
+    name: Analyze & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.41.7
+          channel: stable
+          cache: true
+
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            .dart_tool
+          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-
+
+      # ↓ envied 사용 시에만 필요. 미사용 프로젝트는 이 step 통째로 삭제.
+      - name: Prepare env files (envied placeholder)
+        run: |
+          cat > .env.dev <<EOF
+          APP_NAME=your_app DEV
+          ENVIRONMENT=dev
+          SUPABASE_URL=https://placeholder.supabase.co
+          SUPABASE_ANON_KEY=placeholder_anon_key
+          EOF
+          cat > .env.prod <<EOF
+          APP_NAME=your_app
+          ENVIRONMENT=prod
+          SUPABASE_URL=https://placeholder.supabase.co
+          SUPABASE_ANON_KEY=placeholder_anon_key
+          EOF
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # ↓ envied 사용 시에만 필요. 미사용 프로젝트는 이 step 통째로 삭제.
+      - name: Run build_runner
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Install very_good_cli
+        run: dart pub global activate very_good_cli
+
+      - name: Test with coverage (min 30%)
+        run: very_good test --min-coverage 30
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/lcov.info
+          retention-days: 7
+```
+
+### envied 사용 여부에 따른 분기
+
+- **envied 사용**: 위 yml 그대로 사용. `.env.dev` / `.env.prod` placeholder 작성 + `build_runner` step 필수.
+- **envied 미사용**: `Prepare env files (envied placeholder)` + `Run build_runner` 두 step을 통째로 삭제. `flutter pub get` 직후 바로 `Analyze`로 진행.
+
+> placeholder 값은 envied가 `@EnviedField`의 타입 제약(URL 형식 등)을 컴파일 타임에 검사하므로, 위처럼 형식만 맞춰주면 충분. 실제 값을 채울 필요는 없다.
+
 ---
 
 ## Known Issues & 트러블슈팅
@@ -426,6 +642,8 @@ git push origin v1.0.0-prod-ios
 | match 복호화 실패 | `force_legacy_encryption` 설정 불일치 | Matchfile에 `force_legacy_encryption(true)` 추가 |
 | prod 태그 push 후 `main 브랜치에서만` 오류 | feature 브랜치에서 prod 태그 push | main 병합 후 태그 |
 | `Environment variable not found for field` (build_runner) | `.env.example`이 없거나 필드 누락 | `.env.example`에 필요한 모든 키 추가 |
+| `Can't find action './.github/actions/...'` (Android dev 배포) | reusable workflow의 composite action 상대 경로가 caller 레포 워크스페이스로 해석. `.gha` checkout 누락 + 경로 미수정 | `flutter-deploy-workflows v1.8.0+` 사용 시 자동 처리 |
+| Android dev 배포 시 릴리즈 키스토어 단계가 항상 스킵됨 (`RELEASE_KEYSTORE_BASE64` 설정해도) | `if:` 조건에서 secret 값이 빈 문자열로 평가됨 (GitHub Actions가 `if:` 평가 시점에 secret 미접근) | `flutter-deploy-workflows v1.8.0+` 사용 시 자동 처리 (run 내부에서 조건 분기) |
 
 ---
 
@@ -433,6 +651,7 @@ git push origin v1.0.0-prod-ios
 
 | flutter-deploy-workflows | fastlane-plugin-sanches37_deploy | Flutter |
 |---|---|---|
+| v1.8.0 | v0.2.1 | >= 3.32.0 |
 | v1.7.0 | v0.2.1 | >= 3.32.0 |
 | v1.6.2 ~ v1.6.3 | v0.2.1 | >= 3.32.0 |
 | v1.6.0 ~ v1.6.1 | v0.2.0 | >= 3.32.0 |

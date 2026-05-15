@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+### Docs
+- `SETUP.md`: Android 자동배포 가이드 추가 — `3-B. Android fastlane 파일` 섹션(Gemfile / Pluginfile / Fastfile), 4단계 `deploy-android-dev.yml` thin caller 예시, 5단계 Secrets Android 섹션, 6단계 `.gitignore` Android 항목, 8단계 Android 태그 형식·배포 순서
+- `SETUP.md`: 9단계 — CI (선택) 신규 — `flutter analyze` + `very_good test` 템플릿, envied 사용/미사용 분기 명시
+- `SETUP.md`: Known Issues 테이블에 v1.8.0 Android 버그픽스 2건 행 추가 (`.gha` checkout 누락 / 릴리즈 키스토어 단계 항상 스킵)
+- `SETUP.md`: 버전 호환성 표에 v1.8.0 행 추가
+
 ## [1.8.0] - 2026-05-13
 
 ### Fixed
