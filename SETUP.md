@@ -454,6 +454,9 @@ ios/fastlane/.api_key.json
 ios/vendor/
 android/vendor/
 
+# Bundler local config (bundle config set --local path가 생성)
+android/.bundle/
+
 # envied 생성 파일 (실제 키 포함)
 lib/core/config/env_*.g.dart
 
